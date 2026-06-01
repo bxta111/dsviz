@@ -227,7 +227,7 @@ const Visualizer = {
         if (op === '插入') {
             data.splice(3, 0, this._getInputValue());
         } else if (op === '删除') {
-            data.splice(3, 1);
+            if (data.length > 0) data.splice(data.length - 1, 1);
         } else if (op === '查找') {
             this._highlightIndex(4);
             return;
@@ -423,8 +423,8 @@ const Visualizer = {
         } else if (op === '尾插') {
             this._insertNodeAt(data.length, this._getInputValue('X'));
         } else if (op === '删除') {
-            if (data.length > 1) {
-                data.splice(Math.floor(data.length / 2), 1);
+            if (data.length > 0) {
+                data.splice(data.length - 1, 1);
                 this._nodesData = data;
                 this._redraw();
             }
@@ -505,7 +505,7 @@ const Visualizer = {
             this._stackData = data;
             this._redraw();
         } else if (op === 'Pop') {
-            if (data.length > 1) {
+            if (data.length > 0) {
                 data.pop();
                 this._stackData = data;
                 this._redraw();

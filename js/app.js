@@ -17,6 +17,7 @@ const App = {
     currentQuestionIdx: 0,  // 当前题目索引
     consecutiveCorrect: 0,  // 连续答对数
     consecutiveWrong: 0,    // 连续答错数
+    awaitingMoreQuestions: false,  // 等待用户回应"要不要加题"
 
     // ==================== 初始化 ====================
     init() {
@@ -301,7 +302,7 @@ const App = {
             if (this.currentQuestionIdx < this.currentQuestions.length) {
                 setTimeout(() => this._showCurrentQuestion(), 1000);
             } else {
-                await this._finishPractice();
+                await this._offerMoreQuestions();
             }
             return;
         }
@@ -344,7 +345,7 @@ const App = {
                 this._showCurrentQuestion();
             }, 2000);
         } else {
-            setTimeout(() => this._finishPractice(), 2000);
+            setTimeout(() => this._offerMoreQuestions(), 2000);
         }
     },
 
@@ -409,12 +410,44 @@ const App = {
         Chat.setEnabled(true);
     },
 
+    // ==================== 题目做完：夸赞 + 询问是否加题 ====================
+    _offerMoreQuestions() {
+        this.awaitingMoreQuestions = true;
+        this.state = 'practicing';
+        Chat.setEnabled(true);
+        Chat.input.focus();
+
+        const praises = [
+            '太棒了！你完成得非常好 👏',
+            '厉害！你已经掌握了要点 🌟',
+            '很不错！继续保持这个节奏 💪',
+            '真棒！你对这个知识点理解得很到位 🎯'
+        ];
+        const praise = praises[Math.floor(Math.random() * praises.length)];
+        Chat.addAIMessage(`<p>${praise}</p><p>要不要再来几道题巩固一下？<br>回复 <strong>"要"</strong> 继续出题，回复 <strong>"不用了"</strong> 进入下一步。</p>`);
+    },
+
     // ==================== 自由对话处理 ====================
     async _handleUserMessage(text) {
         Chat.addUserMessage(text);
 
-        const topicName = this.currentTopic?.name || '数据结构';
+        // 如果正在等待"是否加题"的回复
+        if (this.awaitingMoreQuestions) {
+            this.awaitingMoreQuestions = false;
+            const positive = /^(要|好|可|行|是|对|yes|ok|sure|y|再来|继续|加|多|嗯|想|1)/i;
+            if (positive.test(text.trim())) {
+                Chat.addAIMessage('<p>好的，再来几道！📝</p>');
+                setTimeout(() => this._enterQuestionPhase(), 800);
+                return;
+            } else {
+                Chat.addAIMessage('<p>没问题，咱们继续前进～</p>');
+                this._finishPractice();
+                return;
+            }
+        }
 
+        // 正常自由对话
+        const topicName = this.currentTopic?.name || '数据结构';
         Chat.setEnabled(false);
         const streamMsg = Chat.startStreamMessage();
         try {
@@ -441,7 +474,7 @@ const App = {
         if (this.currentQuestionIdx < this.currentQuestions.length) {
             this._showCurrentQuestion();
         } else {
-            this._finishPractice();
+            this._offerMoreQuestions();
         }
     },
 

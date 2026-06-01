@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DSViz — 数据结构可视化学习助手</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="top-bar">
+        <div class="logo">
+            <span class="logo-icon">🌳</span>
+            <h1>DSViz</h1>
+            <span class="logo-sub">数据结构可视化学习助手</span>
+        </div>
+        <div class="top-actions">
+            <button id="btn-api-settings" class="btn-icon" title="API 设置" onclick="(function(){var m=document.getElementById('modal-api');if(m)m.classList.remove('hidden');var k=document.getElementById('api-key');if(k&&typeof APIConfig!=='undefined')k.value=APIConfig.key;var b=document.getElementById('api-base');if(b&&typeof APIConfig!=='undefined')b.value=APIConfig.base;var s=document.getElementById('api-model');if(s&&typeof APIConfig!=='undefined')s.value=APIConfig.model;})()">⚙️</button>
+            <button id="btn-reset" class="btn-icon" title="重置进度">🔄</button>
+        </div>
+    </header>
+
+    <!-- API 设置弹窗 -->
+    <div id="modal-api" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ DeepSeek API 设置</h2>
+            <label for="api-key">API Key</label>
+            <input type="password" id="api-key" placeholder="sk-xxxxxxxxxxxxxxxx">
+            <label for="api-base">API 地址（默认 DeepSeek 官方）</label>
+            <input type="text" id="api-base" placeholder="https://api.deepseek.com">
+            <label for="api-model">模型</label>
+            <select id="api-model">
+                <option value="deepseek-chat">deepseek-chat</option>
+                <option value="deepseek-reasoner">deepseek-reasoner (R1)</option>
+            </select>
+            <div class="modal-buttons">
+                <button id="btn-save-api" class="btn-primary">保存</button>
+                <button id="btn-close-api" class="btn-secondary">取消</button>
+            </div>
+            <p class="hint">API Key 仅保存在你的浏览器本地存储中，不会上传到任何服务器。</p>
+        </div>
+    </div>
+
+    <!-- 主内容区：三栏布局 -->
+    <div class="main-container">
+        <!-- 左侧：知识导航 -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>📚 知识导航</h2>
+            </div>
+            <nav id="topic-nav" class="topic-nav">
+                <!-- 由 sidebar.js 动态渲染 -->
+                <div class="loading-placeholder">加载中...</div>
+            </nav>
+            <div class="sidebar-footer">
+                <div id="overall-progress" class="overall-progress">
+                    <!-- 由 progress.js 动态渲染 -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- 中间：可视化区 + 练习区 -->
+        <main class="main-content">
+            <!-- 可视化画布区 -->
+            <section class="visual-section">
+                <div class="section-header">
+                    <h2 id="viz-title">🎨 可视化演示</h2>
+                    <div class="viz-controls" id="viz-controls">
+                        <!-- 操作按钮由 visualizer.js 动态渲染 -->
+                    </div>
+                </div>
+                <div class="canvas-container" id="canvas-container">
+                    <canvas id="viz-canvas"></canvas>
+                    <div id="viz-placeholder" class="viz-placeholder">
+                        <div class="placeholder-icon">👈</div>
+                        <p>请从左侧选择一个数据结构主题开始学习</p>
+                        <p class="hint">AI 将为你讲解，同时这里会展示可视化动画</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 练习区 -->
+            <section class="exercise-section" id="exercise-section">
+                <div class="section-header">
+                    <h2>📝 练习区</h2>
+                    <span id="exercise-status" class="exercise-status"></span>
+                </div>
+                <div id="exercise-container" class="exercise-container">
+                    <div class="placeholder-text">
+                        <p>选择知识点后，AI 会为你生成练习题</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 右侧：AI 对话区 -->
+        <aside class="chat-panel" id="chat-panel">
+            <div class="chat-header">
+                <h2>🤖 AI 助手</h2>
+                <span id="ai-role-badge" class="role-badge role-idle">待命中</span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-welcome">
+                    <p class="welcome-icon">🎓</p>
+                    <p><strong>你好！我是你的数据结构学习助手。</strong></p>
+                    <p>我会根据你的学习风格（<em>视觉理解 + 动手实操</em>）来帮助你：</p>
+                    <ul>
+                        <li>🧑‍🏫 <strong>讲解</strong>概念并配合可视化</li>
+                        <li>❓ <strong>提问</strong>检验你的理解</li>
+                        <li>🔧 <strong>纠错</strong>并给出针对性反馈</li>
+                        <li>📋 <strong>规划</strong>你的学习路径</li>
+                    </ul>
+                    <p>请先在左侧选择一个你想学习的数据结构吧！</p>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <textarea id="chat-input" placeholder="输入你的回答或问题..." rows="2" disabled></textarea>
+                <div class="chat-buttons">
+                    <button id="btn-send" class="btn-primary" disabled>发送</button>
+                    <button id="btn-hint" class="btn-secondary" disabled>💡 提示</button>
+                    <button id="btn-skip" class="btn-outline" disabled>跳过</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 脚本加载 -->
+    <script src="js/config.js"></script>
+    <script src="js/utils/helpers.js"></script>
+    <script src="js/data/topics.js"></script>
+    <script src="js/data/exercises.js"></script>
+    <script src="js/ai/prompts.js"></script>
+    <script src="js/ai/deepseek.js"></script>
+    <script src="js/components/progress.js"></script>
+    <script src="js/components/sidebar.js"></script>
+    <script src="js/components/visualizer.js"></script>
+    <script src="js/components/chat.js"></script>
+    <script src="js/components/exercise.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

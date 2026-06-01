@@ -41,10 +41,12 @@ const Chat = {
         this.setEnabled(false);
     },
 
-    /** 启用/禁用输入 */
+    /** 启用/禁用输入及辅助按钮 */
     setEnabled(enabled) {
         if (this.input) this.input.disabled = !enabled;
         if (this.sendBtn) this.sendBtn.disabled = !enabled;
+        if (this.hintBtn) this.hintBtn.disabled = !enabled;
+        if (this.skipBtn) this.skipBtn.disabled = !enabled;
         if (enabled && this.input) this.input.focus();
     },
 

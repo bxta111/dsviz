@@ -18,6 +18,7 @@ const App = {
     consecutiveCorrect: 0,  // 连续答对数
     consecutiveWrong: 0,    // 连续答错数
     awaitingMoreQuestions: false,  // 等待用户回应"要不要加题"
+    isExplaining: false,           // 讲解进行中，防止重复触发
 
     // ==================== 初始化 ====================
     init() {
@@ -139,6 +140,9 @@ const App = {
         const topic = getTopicById(topicId);
         if (!topic) return;
 
+        // 讲解进行中，忽略重复点击
+        if (this.isExplaining) return;
+
         // 重复点击同一知识点，不重新讲解，提醒用户可自由提问
         if (this.currentTopic && this.currentTopic.id === topicId) {
             Chat.addAIMessage(`<p>📖 你正在学习 <strong>${topic.name}</strong>，有什么想深入了解的吗？直接在下方向我提问吧！</p>`);
@@ -179,6 +183,7 @@ const App = {
 
     // ==================== 环节①→②：AI 讲解 ====================
     async _enterExplainPhase() {
+        this.isExplaining = true;
         this.state = 'explaining';
         Chat.setRole('explaining');
 
@@ -202,10 +207,15 @@ const App = {
                 streamMsg.append(chunk);
             });
             streamMsg.finish();
+            this.isExplaining = false;
 
-            // 讲解完成后，自动进入提问阶段
-            setTimeout(() => this._enterQuestionPhase(), 1500);
+            // 讲解完成后询问用户是否准备好做题
+            Chat.addAIMessage('<p>🤔 <strong>理解了吗？</strong>准备好了就回复 <strong>"出题"</strong>，或者有什么疑问直接问我～</p>');
+            Chat.setEnabled(true);
+            Chat.input.focus();
+            this.state = 'practicing';
         } catch (err) {
+            this.isExplaining = false;
             Chat.addAIMessage(`<p>❌ <strong>讲解生成失败：</strong>${escapeHtml(err.message)}</p>`);
             this.state = 'idle';
             Chat.setRole('idle');
@@ -375,6 +385,7 @@ const App = {
 
     // ==================== 环节⑤：完成一轮练习 ====================
     async _finishPractice() {
+        this.isExplaining = false;
         this.state = 'reviewing';
         Chat.setRole('planning');
 
@@ -430,18 +441,29 @@ const App = {
     // ==================== 自由对话处理 ====================
     async _handleUserMessage(text) {
         Chat.addUserMessage(text);
+        const msg = text.trim();
 
         // 如果正在等待"是否加题"的回复
         if (this.awaitingMoreQuestions) {
             this.awaitingMoreQuestions = false;
             const positive = /^(要|好|可|行|是|对|yes|ok|sure|y|再来|继续|加|多|嗯|想|1)/i;
-            if (positive.test(text.trim())) {
+            if (positive.test(msg)) {
                 Chat.addAIMessage('<p>好的，再来几道！📝</p>');
                 setTimeout(() => this._enterQuestionPhase(), 800);
                 return;
             } else {
                 Chat.addAIMessage('<p>没问题，咱们继续前进～</p>');
                 this._finishPractice();
+                return;
+            }
+        }
+
+        // 讲解完成后用户说"出题" → 进入提问阶段
+        if (this.state === 'practicing' && !this.currentQuestions.length) {
+            const goQuestion = /^(出题|做题|来吧|开始|好|可|行|是|对|yes|ok|ready|1)/i;
+            if (goQuestion.test(msg)) {
+                Chat.addAIMessage('<p>好的，来测试一下你的理解！📝</p>');
+                setTimeout(() => this._enterQuestionPhase(), 500);
                 return;
             }
         }

@@ -77,7 +77,7 @@ const Visualizer = {
     /** 是否有自定义值输入 */
     _needsValueInput(op) {
         // 需要插入/添加值的操作
-        const withValue = ['插入', '头插', '尾插', 'Push', '入队', 'Put', '加顶点'];
+        const withValue = ['插入', '头插', '尾插', 'Push', '入队', 'Put', 'Get', '加顶点', '加边'];
         return withValue.includes(op);
     },
 
@@ -812,19 +812,64 @@ const Visualizer = {
     },
 
     _animGraph(op) {
+        const gd = this._getGraphData();
         const ctx = this.ctx;
         const w = this.canvas.width / (window.devicePixelRatio || 1);
-        this._redraw();
-        if (op === 'BFS') {
+
+        if (op === '加顶点') {
+            const label = String(this._getInputValue());
+            if (!gd.vertices.includes(label)) {
+                gd.vertices.push(label);
+                // 重新计算圆形布局
+                const cx = 0, cy = 0, radius = 120;
+                gd.positions = {};
+                gd.vertices.forEach((v, i) => {
+                    const angle = (2 * Math.PI / gd.vertices.length) * i - Math.PI / 2;
+                    gd.positions[v] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
+                });
+                this._graphData = gd;
+                this._redraw();
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`✅ 已添加顶点: ${label}`, w / 2, 20);
+            }
+        } else if (op === '加边') {
+            const val = this._getInputValue();
+            // 用值选择两个已有顶点
+            if (gd.vertices.length >= 2) {
+                const i1 = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % gd.vertices.length;
+                const i2 = (i1 + 1 + (parseInt(val) % (gd.vertices.length - 1) || 1)) % gd.vertices.length;
+                const v1 = gd.vertices[i1], v2 = gd.vertices[i2];
+                const exists = gd.edges.some(e =>
+                    (e[0] === v1 && e[1] === v2) || (e[0] === v2 && e[1] === v1));
+                if (!exists) {
+                    gd.edges.push([v1, v2]);
+                    this._graphData = gd;
+                    this._redraw();
+                    ctx.fillStyle = '#10b981';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`✅ 已添加边: ${v1} ↔ ${v2}`, w / 2, 20);
+                } else {
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`⚠️ 边 ${v1} ↔ ${v2} 已存在`, w / 2, 20);
+                }
+            }
+        } else if (op === 'BFS') {
+            this._redraw();
             ctx.fillStyle = '#4f46e5';
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('BFS 遍历: A → B → C → D → E → F', w / 2, 20);
+            ctx.fillText('BFS 遍历: ' + gd.vertices.join(' → '), w / 2, 20);
         } else if (op === 'DFS') {
+            this._redraw();
             ctx.fillStyle = '#4f46e5';
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('DFS 遍历: A → B → D → F → E → C', w / 2, 20);
+            ctx.fillText('DFS 遍历: ' + gd.vertices.join(' → '), w / 2, 20);
         }
     },
 
@@ -907,8 +952,69 @@ const Visualizer = {
     },
 
     _animHash(op) {
-        // 哈希表操作比较简单，主要通过重绘展示
-        this._redraw();
+        const hd = this._getHashData();
+        const n = hd.buckets.length;
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+
+        if (op === 'Put') {
+            const val = this._getInputValue();
+            const key = 'k' + val;
+            const idx = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % n;
+            // 检查是否已存在
+            const bucket = hd.buckets[idx];
+            const existIdx = bucket.findIndex(e => e.key === key);
+            if (existIdx >= 0) {
+                bucket[existIdx].val = String(val);
+            } else {
+                bucket.push({ key: key, val: String(val) });
+            }
+            this._hashData = hd;
+            this._redraw();
+            ctx.fillStyle = '#10b981';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`✅ Put: hash("${key}") → 桶[${idx}] = ${val}`, w / 2, 20);
+        } else if (op === 'Get') {
+            const val = this._getInputValue();
+            const key = 'k' + val;
+            const idx = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % n;
+            const bucket = hd.buckets[idx];
+            const entry = bucket.find(e => e.key === key);
+            this._redraw();
+            if (entry) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🔍 Get: "${key}" → 桶[${idx}] = ${entry.val}`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ "${key}" 不在表中（桶[${idx}] 无此键）`, w / 2, 20);
+            }
+        } else if (op === 'Delete') {
+            if (hd.buckets.some(b => b.length > 0)) {
+                // 删除所有桶中最后一个有元素的桶的第一个元素
+                for (let i = hd.buckets.length - 1; i >= 0; i--) {
+                    if (hd.buckets[i].length > 0) {
+                        const removed = hd.buckets[i].pop();
+                        this._hashData = hd;
+                        this._redraw();
+                        ctx.fillStyle = '#ef4444';
+                        ctx.font = 'bold 14px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`🗑️ Delete: 已删除 "${removed.key}"`, w / 2, 20);
+                        return;
+                    }
+                }
+            }
+            this._redraw();
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚠️ 表中无元素可删除', w / 2, 20);
+        }
     },
 
     // ==================== 通用方法 ====================

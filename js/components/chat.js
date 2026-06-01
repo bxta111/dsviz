@@ -97,6 +97,29 @@ const Chat = {
         this._addMessage('ai', htmlContent);
     },
 
+    /** 开始一条流式 AI 消息，返回一个 {append(chunk), finish()} 对象 */
+    startStreamMessage() {
+        const el = document.createElement('div');
+        el.className = 'chat-message ai';
+        el.id = 'stream-msg';
+        this.container.appendChild(el);
+        this._scrollBottom();
+
+        let rawText = '';
+        return {
+            append: (chunk) => {
+                rawText += chunk;
+                el.innerHTML = '<p>' + escapeHtml(rawText) + '<span class="cursor-blink">▊</span></p>';
+                this._scrollBottom();
+            },
+            finish: () => {
+                el.innerHTML = markdownToHtml(rawText);
+                el.id = '';
+                this.messages.push({ role: 'ai', html: el.innerHTML });
+            }
+        };
+    },
+
     /** 添加一条用户消息 */
     addUserMessage(text) {
         this._addMessage('user', escapeHtml(text));

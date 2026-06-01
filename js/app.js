@@ -193,17 +193,18 @@ const App = {
                 .join('、');
         }
 
-        // 调用 AI 讲解
-        Chat.showLoading();
+        // 调用 AI 讲解（流式输出）
+        const streamMsg = Chat.startStreamMessage();
         try {
-            const explanation = await AI.explain(topic, learningHistory);
-            Chat.hideLoading();
-            Chat.addAIMessage(markdownToHtml(explanation));
+            const systemPrompt = AIPrompts.explainer(topic, learningHistory);
+            await AI.chatStream(systemPrompt, `请给我讲解"${topic.name}"这个数据结构。`, (chunk) => {
+                streamMsg.append(chunk);
+            });
+            streamMsg.finish();
 
             // 讲解完成后，自动进入提问阶段
             setTimeout(() => this._enterQuestionPhase(), 1500);
         } catch (err) {
-            Chat.hideLoading();
             Chat.addAIMessage(`<p>❌ <strong>讲解生成失败：</strong>${escapeHtml(err.message)}</p>`);
             this.state = 'idle';
             Chat.setRole('idle');
@@ -385,20 +386,17 @@ const App = {
             return;
         }
 
-        // 规划者介入：推荐下一步
+        // 规划者介入：推荐下一步（流式输出）
         const progress = ProgressStore.getAll();
-        Chat.showLoading();
+        const streamMsg = Chat.startStreamMessage();
         try {
-            const plan = await AI.plan(
-                this.currentTopic.id,
-                progress.masteredTopics,
-                TOPICS,
-                { rate: ProgressStore.getMasteryRate(), total: TOPICS.length }
-            );
-            Chat.hideLoading();
-            Chat.addAIMessage(markdownToHtml(plan));
+            const systemPrompt = AIPrompts.planner(this.currentTopic.id, progress.masteredTopics, TOPICS,
+                { rate: ProgressStore.getMasteryRate(), total: TOPICS.length });
+            await AI.chatStream(systemPrompt, '请根据我的学习情况，给我一些学习建议。', (chunk) => {
+                streamMsg.append(chunk);
+            });
+            streamMsg.finish();
         } catch {
-            Chat.hideLoading();
             Chat.addAIMessage(`<p>✅ 你已完成 <strong>${this.currentTopic.name}</strong> 的学习！</p><p>💡 建议继续学习下一个未掌握的知识点。</p>`);
         }
 
@@ -418,13 +416,14 @@ const App = {
         const topicName = this.currentTopic?.name || '数据结构';
 
         Chat.setEnabled(false);
-        Chat.showLoading();
+        const streamMsg = Chat.startStreamMessage();
         try {
-            const reply = await AI.generalChat(topicName, text, '');
-            Chat.hideLoading();
-            Chat.addAIMessage(markdownToHtml(reply));
+            const systemPrompt = AIPrompts.generalChat(topicName, text, '');
+            await AI.chatStream(systemPrompt, text, (chunk) => {
+                streamMsg.append(chunk);
+            });
+            streamMsg.finish();
         } catch (err) {
-            Chat.hideLoading();
             Chat.addAIMessage(`<p>❌ ${escapeHtml(err.message)}</p>`);
         }
         Chat.setEnabled(true);

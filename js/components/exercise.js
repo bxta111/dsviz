@@ -27,7 +27,7 @@ const Exercise = {
                 <div class="exercise-options" id="exercise-options">
                     ${question.options.map((opt, i) => `
                         <div class="exercise-option" data-index="${i}">
-                            ${String.fromCharCode(65 + i)}. ${escapeHtml(opt)}
+                            ${String.fromCharCode(65 + i)}. ${escapeHtml(opt.replace(/^[A-Da-d][.)、]?\s*/, ''))}
                         </div>
                     `).join('')}
                 </div>

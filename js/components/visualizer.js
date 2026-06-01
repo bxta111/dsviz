@@ -74,7 +74,14 @@ const Visualizer = {
         this._redraw();
     },
 
-    /** 渲染操作按钮 */
+    /** 是否有自定义值输入 */
+    _needsValueInput(op) {
+        // 需要插入/添加值的操作
+        const withValue = ['插入', '头插', '尾插', 'Push', '入队', 'Put', '加顶点'];
+        return withValue.includes(op);
+    },
+
+    /** 渲染操作按钮（含自定义值输入框） */
     _renderControls(topic) {
         const container = document.getElementById('viz-controls');
         if (!container) return;
@@ -90,9 +97,17 @@ const Visualizer = {
         };
 
         const ops = labels[topic.visualType] || topic.operations;
-        container.innerHTML = ops.map((op, i) =>
-            `<button class="viz-btn" data-op="${op}" ${i === 0 ? 'class="active"' : ''}>${op}</button>`
-        ).join('');
+        const hasInsertOp = ops.some(op => this._needsValueInput(op));
+
+        container.innerHTML =
+            (hasInsertOp
+                ? `<label style="font-size:12px;color:var(--text-secondary);margin-right:4px;">值:</label>
+                   <input id="viz-value-input" type="number" value="${Math.floor(Math.random() * 90) + 10}"
+                    style="width:55px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;margin-right:8px;">`
+                : '') +
+            ops.map((op, i) =>
+                `<button class="viz-btn" data-op="${op}" ${i === 0 ? 'class="active"' : ''}>${op}</button>`
+            ).join('');
 
         // 绑定事件
         container.querySelectorAll('.viz-btn').forEach(btn => {
@@ -102,6 +117,15 @@ const Visualizer = {
                 this._handleOperation(btn.dataset.op, topic);
             });
         });
+    },
+
+    /** 读取用户输入的值 */
+    _getInputValue(defaultVal = null) {
+        const input = document.getElementById('viz-value-input');
+        if (input && input.value.trim() !== '') {
+            return parseInt(input.value) || input.value;
+        }
+        return defaultVal !== null ? defaultVal : Math.floor(Math.random() * 90) + 10;
     },
 
     /** 处理操作按钮点击 */
@@ -199,10 +223,9 @@ const Visualizer = {
     },
 
     _animArray(op) {
-        // 简单动画：高亮重绘
         const data = this._getArrayData();
         if (op === '插入') {
-            data.splice(3, 0, Math.floor(Math.random() * 90) + 10);
+            data.splice(3, 0, this._getInputValue());
         } else if (op === '删除') {
             data.splice(3, 1);
         } else if (op === '查找') {
@@ -396,9 +419,9 @@ const Visualizer = {
     _animNodes(op) {
         const data = this._getNodesData();
         if (op === '头插') {
-            this._insertNodeAt(0, String.fromCharCode(65 + Math.floor(Math.random() * 20) + 6));
+            this._insertNodeAt(0, this._getInputValue('X'));
         } else if (op === '尾插') {
-            this._insertNodeAt(data.length, String.fromCharCode(65 + Math.floor(Math.random() * 20) + 6));
+            this._insertNodeAt(data.length, this._getInputValue('X'));
         } else if (op === '删除') {
             if (data.length > 1) {
                 data.splice(Math.floor(data.length / 2), 1);
@@ -478,7 +501,7 @@ const Visualizer = {
     _animStack(op) {
         const data = this._getStackData();
         if (op === 'Push') {
-            data.push(`元素${data.length}`);
+            data.push(String(this._getInputValue()));
             this._stackData = data;
             this._redraw();
         } else if (op === 'Pop') {
@@ -553,7 +576,7 @@ const Visualizer = {
     _animQueue(op) {
         const data = this._getQueueData();
         if (op === '入队') {
-            data.push(String.fromCharCode(65 + data.length));
+            data.push(String(this._getInputValue()));
             this._queueData = data;
             this._redraw();
         } else if (op === '出队') {
@@ -655,8 +678,7 @@ const Visualizer = {
     _animTree(op) {
         const tree = this._getTreeData();
         if (op === '插入') {
-            // 在 BST 中随机插入一个值
-            const newVal = Math.floor(Math.random() * 20) + 1;
+            const newVal = this._getInputValue();
             this._insertBST(tree, newVal);
             this._treeData = tree;
             this._redraw();

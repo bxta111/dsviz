@@ -6,11 +6,85 @@
 
 const AI = {
     /**
-     * 核心 API 调用
-     * @param {string} systemPrompt - 系统提示词
-     * @param {string} userMessage - 用户消息
-     * @param {object} options - 可选配置
-     * @returns {Promise<string>} AI 回复文本
+     * 流式 API 调用（文字实时输出，体验更快）
+     * @param {string} systemPrompt
+     * @param {string} userMessage
+     * @param {function} onChunk - 每收到一段文字就回调 onChunk(text)
+     * @param {object} options
+     * @returns {Promise<string>} 完整回复文本
+     */
+    async chatStream(systemPrompt, userMessage, onChunk, options = {}) {
+        if (!APIConfig.isConfigured()) {
+            throw new Error('请先配置 DeepSeek API Key（点击右上角 ⚙️ 按钮）');
+        }
+
+        const messages = [];
+        if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+        messages.push({ role: 'user', content: userMessage });
+
+        const body = {
+            model: APIConfig.model,
+            messages: messages,
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.maxTokens ?? 2048,
+            stream: true
+        };
+
+        const resp = await fetch(`${APIConfig.base}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${APIConfig.key}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            let errMsg;
+            try { const errJson = JSON.parse(errText); errMsg = errJson.error?.message || errText; }
+            catch { errMsg = errText; }
+            throw new Error(`API 错误 (${resp.status}): ${errMsg}`);
+        }
+
+        // 解析 SSE 流
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 最后一个可能不完整，留下次处理
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data:')) continue;
+                const data = trimmed.slice(5).trim();
+                if (data === '[DONE]') continue;
+
+                try {
+                    const parsed = JSON.parse(data);
+                    const content = parsed.choices?.[0]?.delta?.content;
+                    if (content) {
+                        fullText += content;
+                        onChunk && onChunk(content, fullText);
+                    }
+                } catch (e) {
+                    // 忽略解析失败的行
+                }
+            }
+        }
+
+        return fullText;
+    },
+
+    /**
+     * 核心 API 调用（非流式，用于需要完整 JSON 的场景）
      */
     async chat(systemPrompt, userMessage, options = {}) {
         if (!APIConfig.isConfigured()) {

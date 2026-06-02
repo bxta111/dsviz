@@ -241,6 +241,20 @@ ul { list-style: none; }
     padding: 12px 20px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
+    gap: 12px;
+}
+
+.viz-step-indicator {
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #eef2ff;
+    color: #4f46e5;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .section-header h2 {
@@ -392,12 +406,43 @@ ul { list-style: none; }
     color: #991b1b;
 }
 
+.exercise-feedback.socratic-fb {
+    background: #eef2ff;
+    color: #3730a3;
+    border-left: 4px solid #4f46e5;
+}
+
 .exercise-status {
     font-size: 12px;
     padding: 3px 10px;
     border-radius: 10px;
     background: var(--bg);
     color: var(--text-secondary);
+}
+
+/* 代码练习区 */
+.code-editor {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    background: #1e293b;
+    color: #e2e8f0;
+    tab-size: 2;
+}
+
+.code-editor:focus {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+}
+
+.code-practice-area table tr:nth-child(even) {
+    background: rgba(0,0,0,0.02);
 }
 
 /* ===== 右侧 AI 对话区 ===== */
@@ -601,6 +646,42 @@ ul { list-style: none; }
 #btn-question { background: #10b981; }
 #btn-question:hover { background: #059669; }
 #btn-question:disabled { background: #6ee7b7; cursor: not-allowed; }
+#btn-question.code-mode { background: #7c3aed; }
+#btn-question.code-mode:hover { background: #6d28d9; }
+#btn-question.code-mode:disabled { background: #c4b5fd; cursor: not-allowed; }
+
+/* 出题模式切换 */
+.mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    font-size: 11px;
+    background: #f1f5f9;
+    border-radius: 6px;
+    padding: 3px;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.mode-label {
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.mode-label.active {
+    background: var(--primary);
+    color: white;
+}
+
+.mode-sep {
+    color: #cbd5e1;
+    padding: 0 2px;
+}
 
 .btn-secondary {
     padding: 7px 14px;

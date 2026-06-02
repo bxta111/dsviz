@@ -42,10 +42,12 @@ const Visualizer = {
         extract_top: '取堆顶', heapify: '建堆',
         // 图
         bfs: 'BFS', dfs: 'DFS', add_edge: '加边', add_vertex: '加顶点',
+        delete_vertex: '删除顶点',
         // 哈希
         put: 'Put', get: 'Get', contains: 'Contains',
         // 排序
         partition: '分区', sort: '排序', merge: '合并', compare: '比较',
+        add_element: '➕ 添加', remove_element: '➖ 删除', shuffle: '🔀 随机',
     },
 
     /** 绘制圆角矩形（兼容所有浏览器） */
@@ -100,8 +102,15 @@ const Visualizer = {
     /** 是否有自定义值输入（基于操作 ID） */
     _needsValueInput(op) {
         const withValue = ['insert', 'insert_head', 'insert_tail', 'push', 'enqueue',
-            'put', 'get', 'add_vertex', 'add_edge', 'access', 'search'];
+            'put', 'get', 'add_vertex', 'add_edge', 'delete_vertex',
+            'access', 'search', 'add_element', 'delete'];
         return withValue.includes(op);
+    },
+
+    /** 判断该主题的值输入是否应为文本（非数字） */
+    _isTextInput(topic) {
+        return topic.visualType === 'nodes' || topic.visualType === 'stack' ||
+            topic.visualType === 'queue' || topic.visualType === 'graph';
     },
 
     /** 渲染操作按钮（含自定义值输入框） */
@@ -113,12 +122,14 @@ const Visualizer = {
         const opLabels = (topic.operations || []).map(op => this._opLabels[op] || op);
         const opIds = topic.operations || [];
         const hasInsertOp = opIds.some(op => this._needsValueInput(op));
+        const isText = this._isTextInput(topic);
+        const defaultVal = isText ? 'X' : (Math.floor(Math.random() * 90) + 10);
 
         container.innerHTML =
             (hasInsertOp
                 ? `<label style="font-size:12px;color:var(--text-secondary);margin-right:4px;">值:</label>
-                   <input id="viz-value-input" type="number" value="${Math.floor(Math.random() * 90) + 10}"
-                    style="width:55px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;margin-right:8px;">`
+                   <input id="viz-value-input" type="${isText ? 'text' : 'number'}" value="${defaultVal}"
+                    style="width:${isText ? '45' : '55'}px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;margin-right:8px;">`
                 : '') +
             opLabels.map((label, i) =>
                 `<button class="viz-btn${i === 0 ? ' active' : ''}" data-op="${opIds[i]}">${label}</button>`
@@ -135,19 +146,30 @@ const Visualizer = {
         });
     },
 
-    /** 读取用户输入的值 */
+    /** 读取用户输入的值（自动适配数字/文本） */
     _getInputValue(defaultVal = null) {
         const input = document.getElementById('viz-value-input');
         if (input && input.value.trim() !== '') {
-            return parseInt(input.value) || input.value;
+            const raw = input.value.trim();
+            // 数字输入框 → 返回数字；文本输入框 → 返回字符串
+            return input.type === 'number' ? (parseInt(raw) || raw) : raw;
         }
-        return defaultVal !== null ? defaultVal : Math.floor(Math.random() * 90) + 10;
+        if (defaultVal !== null) return defaultVal;
+        // 文本输入框默认值
+        if (this.currentTopic && this._isTextInput(this.currentTopic)) {
+            return String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        }
+        return Math.floor(Math.random() * 90) + 10;
     },
 
     /** 操作后刷新输入框的值，防止重复添加同一元素 */
     _refreshInputValue() {
         const input = document.getElementById('viz-value-input');
-        if (input) {
+        if (!input) return;
+        const topic = this.currentTopic;
+        if (topic && this._isTextInput(topic)) {
+            input.value = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+        } else {
             input.value = Math.floor(Math.random() * 90) + 10;
         }
     },
@@ -265,12 +287,25 @@ const Visualizer = {
             data.splice(3, 0, val);
             this._refreshInputValue();
         } else if (op === 'delete') {
-            if (data.length > 0) data.splice(data.length - 1, 1);
+            const delVal = this._getInputValue();
+            const delIdx = data.indexOf(delVal);
+            if (delIdx >= 0) {
+                data.splice(delIdx, 1);
+                this._refreshInputValue();
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 数组中未找到值 ${delVal}，无法删除`, w / 2, 30);
+                if (typeof App !== 'undefined') App._onVisualizationAction(op);
+                return;
+            }
         } else if (op === 'search') {
             const target = this._getInputValue();
-            const idx = data.indexOf(target);
-            if (idx >= 0) {
-                this._highlightIndex(idx);
+            const indices = [];
+            data.forEach((v, i) => { if (v === target) indices.push(i); });
+            if (indices.length > 0) {
+                this._highlightIndices(indices, target);
             } else {
                 this._redraw();
                 const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
@@ -291,6 +326,16 @@ const Visualizer = {
                 if (typeof App !== 'undefined') App._onVisualizationAction(op);
                 return;
             }
+        } else if (op === 'traverse') {
+            // 遍历：依次高亮每个元素
+            this._redraw();
+            const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+            ctx.fillStyle = '#4f46e5';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`遍历结果: [${data.join(', ')}]`, w / 2, 30);
+            if (typeof App !== 'undefined') App._onVisualizationAction(op);
+            return;
         }
         this._arrayData = data;
         this._redraw();
@@ -331,6 +376,49 @@ const Visualizer = {
             ctx.font = 'bold 16px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(`← 访问 [${idx}]=${data[idx]}`, x + barW / 2, y - 20);
+
+            count++;
+            setTimeout(flash, 400);
+        };
+        flash();
+    },
+
+    /** 高亮多个索引（用于查找重复值） */
+    _highlightIndices(indices, target) {
+        if (!indices.length) return;
+        const data = this._getArrayData();
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+        const h = this.canvas.height / (window.devicePixelRatio || 1);
+        const barW = Math.min(60, (w - 120) / data.length);
+        const maxVal = Math.max(...data);
+        const chartH = h - 120;
+        const startX = (w - barW * data.length) / 2;
+        const baseY = h - 80;
+
+        let count = 0;
+        const flash = () => {
+            if (count >= 6) { this._redraw(); return; }
+            this._redraw();
+
+            indices.forEach(idx => {
+                if (idx >= data.length) return;
+                const x = startX + idx * barW;
+                const barH = (data[idx] / maxVal) * chartH * 0.9;
+                const y = baseY - barH;
+                ctx.fillStyle = count % 2 === 0 ? this.colors.barCompare : this.colors.barSwap;
+                ctx.fillRect(x + 1, y, barW - 2, barH);
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`[${idx}]=${target}`, x + barW / 2, y - 8);
+            });
+
+            // 顶部信息
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🔍 找到 ${indices.length} 个 ${target}，位置：[${indices.join(', ')}]`, w / 2, 25);
 
             count++;
             setTimeout(flash, 400);
@@ -482,10 +570,43 @@ const Visualizer = {
             this._insertNodeAt(data.length, this._getInputValue('X'));
             this._refreshInputValue();
         } else if (op === 'delete') {
-            if (data.length > 0) {
-                data.splice(data.length - 1, 1);
+            const delVal = String(this._getInputValue());
+            const delIdx = data.findIndex(item => String(item) === delVal);
+            if (delIdx >= 0) {
+                data.splice(delIdx, 1);
                 this._nodesData = data;
+                this._refreshInputValue();
                 this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已删除节点 "${delVal}"`, w / 2, 30);
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 链表中未找到 "${delVal}"，无法删除`, w / 2, 30);
+            }
+        } else if (op === 'search') {
+            const target = String(this._getInputValue());
+            const indices = [];
+            data.forEach((item, i) => { if (String(item) === target) indices.push(i); });
+            this._redraw();
+            const ctx = this.ctx;
+            const w = this.canvas.width / (window.devicePixelRatio || 1);
+            if (indices.length > 0) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🔍 找到 ${indices.length} 个 "${target}"，位于节点 [${indices.join(', ')}]`, w / 2, 30);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 链表中未找到 "${target}"`, w / 2, 30);
             }
         } else if (op === 'reverse') {
             data.reverse();
@@ -570,8 +691,45 @@ const Visualizer = {
                 this._stackData = data;
                 this._redraw();
             }
+        } else if (op === 'delete') {
+            const delVal = this._getInputValue();
+            const delIdx = data.lastIndexOf(String(delVal));
+            if (delIdx >= 0) {
+                data.splice(delIdx, 1);
+                this._stackData = data;
+                this._refreshInputValue();
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已从栈中删除 "${delVal}"`, w / 2, 30);
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 栈中未找到 "${delVal}"`, w / 2, 30);
+            }
         }
-        // Peek：不做变化
+        // Peek：高亮栈顶，不做变化
+        if (op === 'peek') {
+            this._redraw();
+            const ctx = this.ctx;
+            const w = this.canvas.width / (window.devicePixelRatio || 1);
+            if (data.length > 0) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`👀 栈顶元素: ${data[data.length - 1]}`, w / 2, 30);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('⚠️ 栈为空', w / 2, 30);
+            }
+        }
     },
 
     // ==================== 队列可视化 ====================
@@ -645,6 +803,43 @@ const Visualizer = {
                 data.shift();
                 this._queueData = data;
                 this._redraw();
+            }
+        } else if (op === 'delete') {
+            const delVal = String(this._getInputValue());
+            const delIdx = data.findIndex(item => String(item) === delVal);
+            if (delIdx >= 0) {
+                data.splice(delIdx, 1);
+                this._queueData = data;
+                this._refreshInputValue();
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已从队列中删除 "${delVal}"`, w / 2, 30);
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 队列中未找到 "${delVal}"`, w / 2, 30);
+            }
+        }
+        if (op === 'peek') {
+            this._redraw();
+            const ctx = this.ctx;
+            const w = this.canvas.width / (window.devicePixelRatio || 1);
+            if (data.length > 0) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`👀 队首元素: ${data[0]}（front）`, w / 2, 30);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('⚠️ 队列为空', w / 2, 30);
             }
         }
     },
@@ -815,16 +1010,53 @@ const Visualizer = {
             ctx.textAlign = 'center';
             ctx.fillText(`${op === 'min' ? '最小值' : '最大值'}: ${result}`, w / 2, 20);
         }
-        // BST 删除（简化展示）
+        // BST 删除（指定值）
         if (op === 'delete') {
+            const delVal = this._getInputValue();
+            const beforeDelete = this._searchBST(tree, delVal, []).includes('found');
+            if (beforeDelete) {
+                this._treeData = this._deleteBST(tree, delVal);
+                this._refreshInputValue();
+            }
+            this._redraw();
             const ctx = this.ctx;
             const w = this.canvas.width / (window.devicePixelRatio || 1);
-            this._redraw();
-            ctx.fillStyle = '#f59e0b';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('⚠️ BST 节点删除较为复杂，请参考 AI 讲解或手动操作', w / 2, 20);
+            if (beforeDelete) {
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已删除节点: ${delVal}`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 树中不存在节点 ${delVal}，无法删除`, w / 2, 20);
+            }
         }
+    },
+
+    /** BST 删除：返回新树根 */
+    _deleteBST(node, val) {
+        if (!node) return null;
+        if (val < node.val) {
+            node.left = this._deleteBST(node.left, val);
+        } else if (val > node.val) {
+            node.right = this._deleteBST(node.right, val);
+        } else {
+            // 找到要删除的节点
+            if (!node.left) return node.right;
+            if (!node.right) return node.left;
+            // 有两个子节点：找右子树最小值替换
+            const minNode = this._findMinNode(node.right);
+            node.val = minNode.val;
+            node.right = this._deleteBST(node.right, minNode.val);
+        }
+        return node;
+    },
+
+    _findMinNode(node) {
+        while (node && node.left) node = node.left;
+        return node;
     },
 
     _findMin(node) {
@@ -997,6 +1229,34 @@ const Visualizer = {
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('BFS 遍历: ' + gd.vertices.join(' → '), w / 2, 20);
+        } else if (op === 'delete_vertex') {
+            const label = String(this._getInputValue());
+            const vIdx = gd.vertices.indexOf(label);
+            if (vIdx >= 0) {
+                gd.vertices.splice(vIdx, 1);
+                // 删除涉及该顶点的所有边
+                gd.edges = gd.edges.filter(([v1, v2]) => v1 !== label && v2 !== label);
+                // 重新计算圆形布局
+                const cx = 0, cy = 0, radius = 120;
+                gd.positions = {};
+                gd.vertices.forEach((v, i) => {
+                    const angle = (2 * Math.PI / Math.max(1, gd.vertices.length)) * i - Math.PI / 2;
+                    gd.positions[v] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
+                });
+                this._graphData = gd;
+                this._refreshInputValue();
+                this._redraw();
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已删除顶点: ${label}（及相关边）`, w / 2, 20);
+            } else {
+                this._redraw();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 图中不存在顶点 "${label}"`, w / 2, 20);
+            }
         } else if (op === 'dfs') {
             this._redraw();
             ctx.fillStyle = '#4f46e5';
@@ -1127,26 +1387,50 @@ const Visualizer = {
                 ctx.fillText(`⚠️ "${key}" 不在表中（桶[${idx}] 无此键）`, w / 2, 20);
             }
         } else if (op === 'delete') {
-            if (hd.buckets.some(b => b.length > 0)) {
-                // 删除所有桶中最后一个有元素的桶的第一个元素
-                for (let i = hd.buckets.length - 1; i >= 0; i--) {
-                    if (hd.buckets[i].length > 0) {
-                        const removed = hd.buckets[i].pop();
-                        this._hashData = hd;
-                        this._redraw();
-                        ctx.fillStyle = '#ef4444';
-                        ctx.font = 'bold 14px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(`🗑️ Delete: 已删除 "${removed.key}"`, w / 2, 20);
-                        return;
-                    }
+            const val = this._getInputValue();
+            const key = 'k' + val;
+            let found = false;
+            for (let i = 0; i < hd.buckets.length; i++) {
+                const bucket = hd.buckets[i];
+                const idx = bucket.findIndex(e => e.key === key);
+                if (idx >= 0) {
+                    bucket.splice(idx, 1);
+                    found = true;
+                    break;
                 }
             }
+            this._hashData = hd;
             this._redraw();
-            ctx.fillStyle = '#f59e0b';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('⚠️ 表中无元素可删除', w / 2, 20);
+            if (found) {
+                this._refreshInputValue();
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ Delete: 已删除 "${key}"`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ "${key}" 不在表中，无法删除`, w / 2, 20);
+            }
+        } else if (op === 'contains') {
+            const val = this._getInputValue();
+            const key = 'k' + val;
+            const idx = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % n;
+            const bucket = hd.buckets[idx];
+            const found = bucket.some(e => e.key === key);
+            this._redraw();
+            if (found) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`✅ "${key}" 存在于桶[${idx}]`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ "${key}" 不存在于表中`, w / 2, 20);
+            }
         }
     },
 
@@ -1204,9 +1488,11 @@ const Visualizer = {
                 drawNodeAndChildren(rightIdx, childX, childY, offsetX / 2);
             }
 
-            // 画节点（根节点高亮）
+            // 画节点（根节点 / AI 高亮节点）
             const isRoot = index === 0;
-            ctx.fillStyle = isRoot ? this.colors.nodeActive : this.colors.nodeFill;
+            const isHighlighted = this._heapHighlights && this._heapHighlights.includes(index);
+            ctx.fillStyle = isHighlighted ? this.colors.nodeHighlight
+                : isRoot ? this.colors.nodeActive : this.colors.nodeFill;
             ctx.strokeStyle = this.colors.nodeStroke;
             ctx.lineWidth = 2.5;
             ctx.beginPath();
@@ -1319,6 +1605,30 @@ const Visualizer = {
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('✅ 建堆完成：已调整为合法的大顶堆', w / 2, 20);
+        } else if (op === 'delete') {
+            const delVal = this._getInputValue();
+            const delIdx = arr.indexOf(delVal);
+            if (delIdx >= 0) {
+                arr.splice(delIdx, 1);
+                // 重新建堆
+                for (let i = Math.floor(arr.length / 2) - 1; i >= 0; i--) {
+                    this._siftDown(arr, i);
+                }
+                this._heapArrayData = arr;
+                this._refreshInputValue();
+                this._redraw();
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已删除堆中元素: ${delVal}（已重新堆化）`, w / 2, 20);
+            } else {
+                this._redraw();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 堆中未找到值 ${delVal}`, w / 2, 20);
+                this._refreshInputValue();
+            }
         } else if (op === 'peek') {
             this._redraw();
             if (arr.length > 0) {
@@ -1433,6 +1743,70 @@ const Visualizer = {
         const w = this.canvas.width / (window.devicePixelRatio || 1);
         const h = this.canvas.height / (window.devicePixelRatio || 1);
 
+        // ===== 数据操作 =====
+        if (op === 'add_element') {
+            const val = this._getInputValue();
+            // 提示用户选择插入位置：默认追加到末尾
+            data.push(val);
+            this._sortData = data;
+            this._refreshInputValue();
+            this._redraw();
+            ctx.fillStyle = '#10b981';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`✅ 已添加元素: ${val}（追加到末尾，数组长度=${data.length}）`, w / 2, 20);
+            if (typeof App !== 'undefined') App._onVisualizationAction('add_element');
+            return;
+        }
+
+        if (op === 'remove_element') {
+            const delVal = this._getInputValue();
+            const delIdx = data.indexOf(delVal);
+            if (delIdx >= 0) {
+                if (data.length <= 2) {
+                    this._redraw();
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('⚠️ 至少保留 2 个元素', w / 2, 20);
+                    return;
+                }
+                data.splice(delIdx, 1);
+                this._sortData = data;
+                this._refreshInputValue();
+                this._redraw();
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🗑️ 已删除元素: ${delVal}（剩余 ${data.length} 个）`, w / 2, 20);
+            } else {
+                this._redraw();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 未找到值 ${delVal}，无法删除`, w / 2, 20);
+            }
+            if (typeof App !== 'undefined') App._onVisualizationAction('remove_element');
+            return;
+        }
+
+        if (op === 'shuffle') {
+            // Fisher-Yates 洗牌
+            for (let i = data.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [data[i], data[j]] = [data[j], data[i]];
+            }
+            this._sortData = data;
+            this._redraw();
+            ctx.fillStyle = '#4f46e5';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🔀 已随机打乱: [${data.join(', ')}]`, w / 2, 20);
+            if (typeof App !== 'undefined') App._onVisualizationAction('shuffle');
+            return;
+        }
+
+        // ===== 排序算法操作 =====
         if (op === 'compare') {
             // 高亮比较相邻元素
             this._redraw();
@@ -1627,6 +2001,102 @@ const Visualizer = {
                 innerStep();
             };
             bubbleStep();
+        }
+    },
+
+    /** 通用：执行来自 AI 的结构化画布指令 */
+    executeVizCommand(cmd) {
+        if (!cmd || !cmd.action) return;
+        const topic = this.currentTopic;
+        if (!topic) return;
+
+        // 通用高亮（数组 / 堆 / 树 / 链表节点等）
+        if (cmd.action === 'highlight' && cmd.indices && cmd.indices.length > 0) {
+            if (topic.visualType === 'array' || topic.id === 'quick-sort' ||
+                topic.id === 'merge-sort' || topic.id === 'sorting-intro') {
+                // 数组类型：重绘后高亮指定柱子
+                this._redraw();
+                const ctx = this.ctx;
+                const w = this.canvas.width / (window.devicePixelRatio || 1);
+                const h = this.canvas.height / (window.devicePixelRatio || 1);
+                const data = topic.id === 'heap' ? this._getHeapData()
+                    : (topic.visualType === 'array' ? this._getArrayData() : this._getSortData());
+                const n = data.length;
+                const barW = Math.min(60, (w - 120) / n);
+                const maxVal = Math.max(...data);
+                const chartH = h - (topic.id.includes('sort') ? 140 : 120);
+                const startX = (w - barW * n) / 2;
+                const baseY = h - 80;
+                cmd.indices.forEach(idx => {
+                    if (idx >= 0 && idx < n) {
+                        const x = startX + idx * barW;
+                        const barH = (data[idx] / maxVal) * chartH * 0.9;
+                        const y = baseY - barH;
+                        ctx.fillStyle = this.colors.barCompare;
+                        ctx.fillRect(x + 1, y, barW - 2, barH);
+                    }
+                });
+            } else if (topic.id === 'heap') {
+                // 堆：重新绘制后高亮节点（通过 _heapHighlights 标记）
+                this._heapHighlights = cmd.indices;
+                this._redraw();
+                setTimeout(() => { this._heapHighlights = null; this._redraw(); }, 3000);
+            } else {
+                // 默认：重绘并显示文本
+                this._redraw();
+            }
+        }
+
+        // 插入操作
+        if (cmd.action === 'insert' && cmd.value !== undefined) {
+            if (topic.id === 'heap') {
+                this._animHeapVisual('insert');
+            } else if (topic.visualType === 'array') {
+                this._animArray('insert');
+            } else if (topic.visualType === 'tree') {
+                this._animTree('insert');
+            } else if (topic.visualType === 'nodes') {
+                this._animNodes('insert_head');
+            }
+        }
+
+        // 堆取顶
+        if (cmd.action === 'extract') {
+            if (topic.id === 'heap') this._animHeapVisual('extract_top');
+        }
+
+        // 遍历
+        if (cmd.action === 'traverse' && cmd.order) {
+            if (topic.visualType === 'tree') {
+                this._animTree(cmd.order);
+            }
+        }
+
+        // 栈操作
+        if (cmd.action === 'push' && cmd.value !== undefined) {
+            if (topic.visualType === 'stack') this._animStack('push');
+        }
+        if (cmd.action === 'pop') {
+            if (topic.visualType === 'stack') this._animStack('pop');
+        }
+
+        // 队列操作
+        if (cmd.action === 'enqueue' && cmd.value !== undefined) {
+            if (topic.visualType === 'queue') this._animQueue('enqueue');
+        }
+        if (cmd.action === 'dequeue') {
+            if (topic.visualType === 'queue') this._animQueue('dequeue');
+        }
+
+        // 链表操作
+        if (cmd.action === 'insert_head' || cmd.action === 'insert_tail') {
+            if (topic.visualType === 'nodes') this._animNodes(cmd.action);
+        }
+
+        // 重置
+        if (cmd.action === 'reset') {
+            this._heapHighlights = null;
+            this._redraw();
         }
     },
 

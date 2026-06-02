@@ -19,6 +19,7 @@ const App = {
     consecutiveWrong: 0,    // 连续答错数
     awaitingMoreQuestions: false,  // 等待用户回应"要不要加题"
     isExplaining: false,           // 讲解进行中，防止重复触发
+    _questionMode: 'choice',       // 出题模式：'choice' 选择题 | 'code' 代码题
 
     // ==================== 初始化 ====================
     init() {
@@ -164,6 +165,8 @@ const App = {
         this.currentQuestionIdx = 0;
         this.consecutiveCorrect = 0;
         this.consecutiveWrong = 0;
+        this._vizStepCount = 0;  // 重置画布步骤计数
+        this._isCodePractice = false;  // 退出代码练习模式
 
         // 先保存当前主题（Sidebar.render() 要从 localStorage 读取）
         const progress = ProgressStore.getAll();
@@ -200,13 +203,45 @@ const App = {
                 .join('、');
         }
 
-        // 调用 AI 讲解（流式输出）
+        // 调用 AI 讲解（流式输出 + VIZ 指令解析）
         const streamMsg = Chat.startStreamMessage();
+        let vizBuffer = '';  // 用于拼接触发 [VIZ:...] 不完全到达的 chunk
         try {
             const systemPrompt = AIPrompts.explainer(topic, learningHistory);
             await AI.chatStream(systemPrompt, `请给我讲解"${topic.name}"这个数据结构。`, (chunk) => {
-                streamMsg.append(chunk);
+                // 解析并过滤 VIZ 指令
+                const combined = vizBuffer + chunk;
+                vizBuffer = '';
+                const vizPattern = /\[VIZ:(\{[^\]]*\})\]/g;
+                let lastIdx = 0;
+                let match;
+
+                while ((match = vizPattern.exec(combined)) !== null) {
+                    // 输出 VIZ 标记之前的文字
+                    const before = combined.slice(lastIdx, match.index);
+                    if (before) streamMsg.append(before);
+                    lastIdx = match.index + match[0].length;
+
+                    // 解析并执行画布指令
+                    try {
+                        const cmd = JSON.parse(match[1]);
+                        this._executeVizStep(cmd);
+                    } catch (e) { /* 格式错误则忽略 */ }
+                }
+
+                // 输出剩余文字
+                const remaining = combined.slice(lastIdx);
+                // 保留可能的半截 [VIZ 在缓冲区
+                const partialIdx = remaining.lastIndexOf('[VIZ:');
+                if (partialIdx >= 0 && !remaining.slice(partialIdx).includes(']')) {
+                    streamMsg.append(remaining.slice(0, partialIdx));
+                    vizBuffer = remaining.slice(partialIdx);
+                } else {
+                    streamMsg.append(remaining);
+                }
             });
+            // 输出缓冲区残留
+            if (vizBuffer) streamMsg.append(vizBuffer);
             streamMsg.finish();
             this.isExplaining = false;
 
@@ -333,9 +368,17 @@ const App = {
             );
             Chat.hideLoading();
             Exercise.showDetailedFeedback(feedback);
-            Chat.addAIMessage(markdownToHtml(
-                `### 🔧 纠错分析\n\n**错误类型**：${ErrorTypeLabel[feedback.errorType] || feedback.errorType}\n\n${feedback.correction || feedback.analysis}\n\n> ${feedback.encouragement || '继续加油！'}`
-            ));
+
+            // 苏格拉底式引导 vs 直接纠错，展示风格不同
+            if (feedback.isSocratic) {
+                Chat.addAIMessage(markdownToHtml(
+                    `### 💡 想一想…\n\n${feedback.analysis || ''}\n\n${feedback.correction || ''}\n\n> ${feedback.encouragement || '仔细思考，你能找到答案！'}`
+                ));
+            } else {
+                Chat.addAIMessage(markdownToHtml(
+                    `### 🔧 纠错分析\n\n**错误类型**：${ErrorTypeLabel[feedback.errorType] || feedback.errorType}\n\n${feedback.correction || feedback.analysis}\n\n> ${feedback.encouragement || '继续加油！'}`
+                ));
+            }
 
             // 给出后续建议
             if (feedback.followUpSuggestion) {
@@ -385,6 +428,23 @@ const App = {
     },
 
     // ==================== 环节⑤：完成一轮练习 ====================
+    /** 切换出题模式 */
+    _toggleQuestionMode(mode) {
+        this._questionMode = mode;
+        // 更新 UI 高亮
+        document.querySelectorAll('#question-mode-toggle .mode-label').forEach(el => {
+            el.classList.toggle('active', el.dataset.mode === mode);
+        });
+        // 更新出题按钮样式
+        const btn = document.getElementById('btn-question');
+        if (btn) {
+            btn.textContent = mode === 'code' ? '📝 出代码题' : '📝 出题';
+            btn.classList.toggle('code-mode', mode === 'code');
+        }
+        const modeLabel = mode === 'code' ? '代码题' : '选择题';
+        Chat.addAIMessage(`<p>🔄 出题模式已切换为 <strong>${modeLabel}</strong></p>`);
+    },
+
     /** 出题按钮：生成/刷新练习题（点一次出一道，多次点击覆盖当前题目） */
     async _onGenerateQuestion() {
         // 防抖：正在生成中则忽略
@@ -409,6 +469,7 @@ const App = {
         }
 
         this._isGeneratingQuestions = true;
+        this._isCodePractice = false;         // 退出代码练习模式
         this.awaitingMoreQuestions = false;  // 清除"要不要加题"等待状态
         this.state = 'practicing';
         Chat.setRole('questioning');
@@ -418,6 +479,28 @@ const App = {
         if (this.consecutiveCorrect >= 2) userLevel = 'intermediate';
         if (this.consecutiveCorrect >= 4) userLevel = 'advanced';
 
+        // 代码题模式 → 分支处理
+        if (this._questionMode === 'code') {
+            Chat.showLoading();
+            try {
+                const codeQ = await AI.generateCodeQuestion(this.currentTopic, userLevel);
+                Chat.hideLoading();
+                Exercise.showCodeQuestion(codeQ);
+                this.currentQuestions = [codeQ];  // 存储为当前题目
+                this.currentQuestionIdx = 0;
+                Chat.addAIMessage(`<p>💻 已生成代码题：<strong>${escapeHtml(codeQ.title || '编程题')}</strong></p><p>在练习区编写代码后提交，AI 会从多个维度审阅。遇到困难可点 <strong>💡 提示</strong> 按钮。</p>`);
+                this._isCodePractice = true;
+            } catch {
+                Chat.hideLoading();
+                Chat.addAIMessage('<p>⚠️ 代码题生成失败，已切换回选择题模式。请重试。</p>');
+            } finally {
+                this._isGeneratingQuestions = false;
+                Chat.setEnabled(true);
+            }
+            return;
+        }
+
+        // 选择题模式
         Chat.showLoading();
         try {
             const result = await AI.generateQuestions(this.currentTopic, userLevel);
@@ -563,9 +646,132 @@ const App = {
 
     /** 请求提示 */
     async _requestHint() {
+        // 代码练习模式 → AI 给出代码提示
+        if (this._isCodePractice && this.currentTopic) {
+            const codeEl = document.getElementById('code-input');
+            const currentCode = codeEl ? codeEl.value.trim() : '';
+            Chat.showLoading();
+            try {
+                const hintPrompt = `你是数据结构课程的助教。学生正在练习编写**${this.currentTopic.name}**的代码。
+当前代码：
+\`\`\`
+${currentCode || '（尚未编写）'}
+\`\`\`
+请给出1-2条简短提示（不超过80字），帮助学生继续编写。
+如果是空代码，给出实现思路的引导。
+如果代码已有部分内容，指出下一步应该写什么。
+不要直接给出完整答案，用引导的方式。`;
+                const hint = await AI.chat(hintPrompt, '请给提示');
+                Chat.hideLoading();
+                Chat.addAIMessage(`<p>💡 <strong>代码提示：</strong>${escapeHtml(hint)}</p>`);
+            } catch {
+                Chat.hideLoading();
+                Chat.addAIMessage(`<p>💡 <strong>提示：</strong>回顾一下 ${this.currentTopic.name} 的核心操作：${this.currentTopic.keyConcepts.slice(0, 3).join('；')}</p>`);
+            }
+            return;
+        }
+
+        // 普通题目模式
         const q = this.currentQuestions[this.currentQuestionIdx];
         if (!q) return;
         Chat.addAIMessage(`<p>💡 <strong>提示：</strong>回顾一下 ${this.currentTopic.name} 的核心概念：${this.currentTopic.keyConcepts.slice(0, 3).join('；')}</p>`);
+    },
+
+    /** 执行 AI 发来的画布指令 */
+    _executeVizStep(cmd) {
+        if (!cmd || !cmd.action) return;
+        // 更新步骤计数
+        this._vizStepCount = (this._vizStepCount || 0) + 1;
+        this._updateVizStepIndicator();
+        // 委托给 Visualizer
+        Visualizer.executeVizCommand(cmd);
+    },
+
+    /** 启动代码练习模式 */
+    _startCodePractice() {
+        if (!this.currentTopic) {
+            Chat.addAIMessage('<p>⚠️ 请先从左侧选择一个知识点。</p>');
+            return;
+        }
+        if (!APIConfig.isConfigured()) {
+            this._showAPIModal();
+            Chat.addAIMessage('<p>⚠️ 请先配置 DeepSeek API Key。</p>');
+            return;
+        }
+        this._isCodePractice = true;
+        Chat.setEnabled(true);  // 启用全部按钮（提示、发送等）
+        Exercise.showCodePractice(this.currentTopic.name);
+        Chat.addAIMessage(`<p>💻 已开启 <strong>${this.currentTopic.name}</strong> 代码练习模式。</p><p>在练习区编写代码并提交，AI 将从<strong>逻辑正确性、边界处理、复杂度、代码风格</strong>四个维度审阅。</p><p>遇到困难可以点 <strong>💡 提示</strong> 按钮获取代码引导。</p>`);
+    },
+
+    /** 提交代码题答案给 AI 审阅 */
+    async _submitCodeAnswer(code) {
+        if (!this.currentTopic) return;
+
+        // 记录答题
+        this.consecutiveCorrect++;
+        const topicId = this.currentTopic.id;
+        ProgressStore.recordAnswer(topicId, true);
+        Sidebar.render();
+        Progress.update();
+
+        Chat.showLoading();
+        try {
+            const review = await AI.reviewCode(this.currentTopic, code);
+            Chat.hideLoading();
+            Exercise.showCodeReview(review);
+            Chat.addAIMessage(markdownToHtml(
+                `### 💻 代码题审阅\n\n` +
+                `**逻辑**：${review.logic || '—'}\n\n` +
+                `**边界**：${review.edgeCases || '—'}\n\n` +
+                `> ${review.encouragement || '继续加油！'}`
+            ));
+
+            // 代码题做完一轮后询问
+            setTimeout(() => this._offerMoreQuestions(), 1500);
+        } catch (err) {
+            Chat.hideLoading();
+            Exercise.showCodeReview({
+                isCorrect: false,
+                logic: '审阅请求失败：' + err.message,
+                encouragement: '请检查网络后重试'
+            });
+        }
+    },
+
+    /** 提交代码给 AI 审阅（自由练习模式） */
+    async _submitCodeForReview(code) {
+        if (!this.currentTopic) return;
+        Chat.showLoading();
+        try {
+            const review = await AI.reviewCode(this.currentTopic, code);
+            Chat.hideLoading();
+            Exercise.showCodeReview(review);
+            Chat.addAIMessage(markdownToHtml(
+                `### 💻 代码审阅\n\n` +
+                `**逻辑**：${review.logic || '—'}\n\n` +
+                `**边界**：${review.edgeCases || '—'}\n\n` +
+                `> ${review.encouragement || '继续加油！'}`
+            ));
+        } catch (err) {
+            Chat.hideLoading();
+            Exercise.showCodeReview({
+                isCorrect: false,
+                logic: '审阅请求失败：' + err.message,
+                encouragement: '请检查网络后重试'
+            });
+        }
+    },
+
+    /** 画布步骤指示器 */
+    _updateVizStepIndicator() {
+        const el = document.getElementById('viz-step-indicator');
+        if (el) {
+            el.textContent = `🎬 AI 演示步骤 ${this._vizStepCount || 0}`;
+            el.style.opacity = '1';
+            clearTimeout(this._vizStepTimer);
+            this._vizStepTimer = setTimeout(() => { el.style.opacity = '0.5'; }, 3000);
+        }
     },
 
     /** 可视化操作回调 */

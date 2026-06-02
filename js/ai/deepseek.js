@@ -221,5 +221,49 @@ const AI = {
     async generalChat(topicName, userMessage, chatHistory = '') {
         const systemPrompt = AIPrompts.generalChat(topicName, userMessage, chatHistory);
         return this.chat(systemPrompt, userMessage);
+    },
+
+    /** 生成代码编程题 */
+    async generateCodeQuestion(topic, userLevel = 'beginner') {
+        const systemPrompt = AIPrompts.codeQuestioner(topic, userLevel);
+        const raw = await this.chat(systemPrompt, '请出一道编程题。');
+        try {
+            let jsonStr = raw.trim();
+            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (jsonMatch) jsonStr = jsonMatch[1].trim();
+            return JSON.parse(jsonStr);
+        } catch {
+            return {
+                id: 'code-fallback',
+                level: userLevel,
+                title: `${topic.name} 编程练习`,
+                description: `请实现 ${topic.name} 的核心操作。`,
+                functionSignature: 'function solution() { ... }',
+                testCases: [{ input: '...', expected: '...' }],
+                hint: topic.keyConcepts.slice(0, 2).join('；')
+            };
+        }
+    },
+
+    /** 审阅用户提交的代码 */
+    async reviewCode(topic, userCode) {
+        const systemPrompt = AIPrompts.codeReviewer(topic, userCode);
+        const raw = await this.chat(systemPrompt, '请审阅这段代码。');
+        try {
+            let jsonStr = raw.trim();
+            const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (jsonMatch) jsonStr = jsonMatch[1].trim();
+            return JSON.parse(jsonStr);
+        } catch {
+            return {
+                isCorrect: false,
+                logic: '无法解析 AI 反馈',
+                edgeCases: '',
+                complexity: '',
+                style: '',
+                improvedCode: null,
+                encouragement: '请检查网络后重试。'
+            };
+        }
     }
 };

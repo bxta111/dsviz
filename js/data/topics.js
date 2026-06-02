@@ -61,7 +61,7 @@ const TOPICS = [
             "与队列 FIFO 混淆"
         ],
         visualType: "stack",
-        operations: ["push", "pop", "peek"],
+        operations: ["push", "pop", "peek", "delete"],
         keyConcepts: [
             "LIFO（后进先出）",
             "所有操作 O(1)",
@@ -82,7 +82,7 @@ const TOPICS = [
             "与栈 LIFO 混淆"
         ],
         visualType: "queue",
-        operations: ["enqueue", "dequeue", "peek"],
+        operations: ["enqueue", "dequeue", "peek", "delete"],
         keyConcepts: [
             "FIFO（先进先出）",
             "所有操作 O(1)",
@@ -148,7 +148,7 @@ const TOPICS = [
             "堆排序稳定性理解"
         ],
         visualType: "tree",
-        operations: ["insert", "extract_top", "heapify", "peek"],
+        operations: ["insert", "extract_top", "heapify", "peek", "delete"],
         keyConcepts: [
             "完全二叉树结构",
             "父节点 ≥ 子节点（大顶堆）",
@@ -172,7 +172,7 @@ const TOPICS = [
             "连通分量 vs 强连通分量概念不清"
         ],
         visualType: "graph",
-        operations: ["bfs", "dfs", "add_edge", "add_vertex"],
+        operations: ["bfs", "dfs", "add_edge", "add_vertex", "delete_vertex"],
         keyConcepts: [
             "顶点 + 边 构成",
             "邻接矩阵 vs 邻接表",
@@ -218,7 +218,7 @@ const TOPICS = [
             "递归实现的空间复杂度忽略"
         ],
         visualType: "array",
-        operations: ["compare"],
+        operations: ["add_element", "remove_element", "shuffle", "compare"],
         keyConcepts: [
             "比较排序下界 Ω(n log n)",
             "稳定排序 vs 不稳定排序",
@@ -239,7 +239,7 @@ const TOPICS = [
             "相同元素的处理（稳定性）"
         ],
         visualType: "array",
-        operations: ["partition", "sort"],
+        operations: ["add_element", "remove_element", "shuffle", "partition", "sort"],
         keyConcepts: [
             "分治思想：选 pivot → partition → 递归",
             "平均 O(n log n)，最坏 O(n²)",
@@ -260,7 +260,7 @@ const TOPICS = [
             "额外 O(n) 空间开销理解"
         ],
         visualType: "array",
-        operations: ["merge", "sort"],
+        operations: ["add_element", "remove_element", "shuffle", "merge", "sort"],
         keyConcepts: [
             "分治思想：分割到底 → 两两合并",
             "稳定排序，始终 O(n log n)",

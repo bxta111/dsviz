@@ -65,6 +65,7 @@
             <section class="visual-section">
                 <div class="section-header">
                     <h2 id="viz-title">🎨 可视化演示</h2>
+                    <span id="viz-step-indicator" class="viz-step-indicator"></span>
                     <div class="viz-controls" id="viz-controls">
                         <!-- 操作按钮由 visualizer.js 动态渲染 -->
                     </div>
@@ -83,7 +84,11 @@
             <section class="exercise-section" id="exercise-section">
                 <div class="section-header">
                     <h2>📝 练习区</h2>
-                    <span id="exercise-status" class="exercise-status"></span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span id="exercise-status" class="exercise-status"></span>
+                        <button id="btn-code-practice" class="btn-secondary" style="font-size:11px;"
+                            onclick="if(typeof App!=='undefined')App._startCodePractice()">💻 代码练习</button>
+                    </div>
                 </div>
                 <div id="exercise-container" class="exercise-container">
                     <div class="placeholder-text">
@@ -118,6 +123,11 @@
                 <div class="chat-buttons">
                     <button id="btn-send" class="btn-primary" disabled>发送</button>
                     <button id="btn-question" class="btn-primary" disabled>📝 出题</button>
+                    <label id="question-mode-toggle" class="mode-toggle" title="切换出题类型">
+                        <span class="mode-label active" data-mode="choice" onclick="if(typeof App!=='undefined')App._toggleQuestionMode('choice')">选择</span>
+                        <span class="mode-sep">/</span>
+                        <span class="mode-label" data-mode="code" onclick="if(typeof App!=='undefined')App._toggleQuestionMode('code')">代码</span>
+                    </label>
                     <button id="btn-hint" class="btn-secondary" onclick="if(typeof App!=='undefined')App._requestHint()">💡 提示</button>
                     <button id="btn-skip" class="btn-outline" onclick="if(typeof App!=='undefined')App._skipQuestion()">跳过</button>
                 </div>

@@ -175,6 +175,7 @@ const App = {
         Visualizer.loadTopic(topic);
         Chat.clear();
         Chat.setEnabled(false);
+        Chat.setQuestionEnabled(true);  // 出题按钮在有知识点后即可用
         Exercise.clear();
 
         // 进入讲解流程
@@ -384,6 +385,66 @@ const App = {
     },
 
     // ==================== 环节⑤：完成一轮练习 ====================
+    /** 出题按钮：生成/刷新练习题（点一次出一道，多次点击覆盖当前题目） */
+    async _onGenerateQuestion() {
+        // 防抖：正在生成中则忽略
+        if (this._isGeneratingQuestions) return;
+
+        // 无知识点
+        if (!this.currentTopic) {
+            Chat.addAIMessage('<p>⚠️ 请先从左侧选择一个知识点。</p>');
+            return;
+        }
+
+        // API 未配置
+        if (!APIConfig.isConfigured()) {
+            this._showAPIModal();
+            Chat.addAIMessage('<p>⚠️ 请先配置 DeepSeek API Key（点击右上角 ⚙️）。</p>');
+            return;
+        }
+
+        // 讲解进行中则先结束讲解状态
+        if (this.isExplaining) {
+            this.isExplaining = false;
+        }
+
+        this._isGeneratingQuestions = true;
+        this.awaitingMoreQuestions = false;  // 清除"要不要加题"等待状态
+        this.state = 'practicing';
+        Chat.setRole('questioning');
+
+        // 根据连续正确/错误数调整难度
+        let userLevel = 'beginner';
+        if (this.consecutiveCorrect >= 2) userLevel = 'intermediate';
+        if (this.consecutiveCorrect >= 4) userLevel = 'advanced';
+
+        Chat.showLoading();
+        try {
+            const result = await AI.generateQuestions(this.currentTopic, userLevel);
+            Chat.hideLoading();
+
+            if (result.questions && result.questions.length > 0) {
+                // 覆盖当前题目
+                this.currentQuestions = result.questions;
+                this.currentQuestionIdx = 0;
+                Exercise.clear();
+                this._showCurrentQuestion();
+                Chat.addAIMessage(`<p>📝 已生成 <strong>${result.questions.length}</strong> 道${userLevel === 'beginner' ? '基础' : userLevel === 'intermediate' ? '进阶' : '挑战'}题，请作答。</p>`);
+            } else {
+                Exercise.clear();
+                this._useBuiltinExercise();
+            }
+
+            Chat.setEnabled(true);
+        } catch (err) {
+            Chat.hideLoading();
+            Exercise.clear();
+            this._useBuiltinExercise();
+            Chat.setEnabled(true);
+        } finally {
+            this._isGeneratingQuestions = false;
+        }
+    },
     async _finishPractice() {
         this.isExplaining = false;
         this.state = 'reviewing';

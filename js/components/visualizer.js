@@ -25,6 +25,29 @@ const Visualizer = {
         grid: '#f1f5f9'
     },
 
+    // 操作 ID → 中文标签映射（用于渲染按钮）
+    _opLabels: {
+        // 数组
+        access: '访问', insert: '插入', delete: '删除', search: '查找', traverse: '遍历',
+        // 链表
+        insert_head: '头插', insert_tail: '尾插', reverse: '反转',
+        // 栈
+        push: 'Push', pop: 'Pop', peek: 'Peek',
+        // 队列
+        enqueue: '入队', dequeue: '出队',
+        // 树/BST
+        preorder: '前序', inorder: '中序', postorder: '后序', levelorder: '层序',
+        min: '最小', max: '最大',
+        // 堆
+        extract_top: '取堆顶', heapify: '建堆',
+        // 图
+        bfs: 'BFS', dfs: 'DFS', add_edge: '加边', add_vertex: '加顶点',
+        // 哈希
+        put: 'Put', get: 'Get', contains: 'Contains',
+        // 排序
+        partition: '分区', sort: '排序', merge: '合并', compare: '比较',
+    },
+
     /** 绘制圆角矩形（兼容所有浏览器） */
     _roundRect(x, y, w, h, r) {
         const ctx = this.ctx;
@@ -74,10 +97,10 @@ const Visualizer = {
         this._redraw();
     },
 
-    /** 是否有自定义值输入 */
+    /** 是否有自定义值输入（基于操作 ID） */
     _needsValueInput(op) {
-        // 需要插入/添加值的操作
-        const withValue = ['插入', '头插', '尾插', 'Push', '入队', 'Put', 'Get', '加顶点', '加边'];
+        const withValue = ['insert', 'insert_head', 'insert_tail', 'push', 'enqueue',
+            'put', 'get', 'add_vertex', 'add_edge', 'access', 'search'];
         return withValue.includes(op);
     },
 
@@ -86,18 +109,10 @@ const Visualizer = {
         const container = document.getElementById('viz-controls');
         if (!container) return;
 
-        const labels = {
-            array: ['访问', '插入', '删除', '查找'],
-            nodes: ['头插', '尾插', '删除', '反转'],
-            stack: ['Push', 'Pop', 'Peek'],
-            queue: ['入队', '出队', 'Peek'],
-            tree: ['插入', '查找', '前序', '中序', '后序', '层序'],
-            graph: ['BFS', 'DFS', '加边', '加顶点'],
-            hash: ['Put', 'Get', 'Delete']
-        };
-
-        const ops = labels[topic.visualType] || topic.operations;
-        const hasInsertOp = ops.some(op => this._needsValueInput(op));
+        // 使用 topic 自己的 operations 映射为中文标签
+        const opLabels = (topic.operations || []).map(op => this._opLabels[op] || op);
+        const opIds = topic.operations || [];
+        const hasInsertOp = opIds.some(op => this._needsValueInput(op));
 
         container.innerHTML =
             (hasInsertOp
@@ -105,16 +120,17 @@ const Visualizer = {
                    <input id="viz-value-input" type="number" value="${Math.floor(Math.random() * 90) + 10}"
                     style="width:55px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;margin-right:8px;">`
                 : '') +
-            ops.map((op, i) =>
-                `<button class="viz-btn" data-op="${op}" ${i === 0 ? 'class="active"' : ''}>${op}</button>`
+            opLabels.map((label, i) =>
+                `<button class="viz-btn${i === 0 ? ' active' : ''}" data-op="${opIds[i]}">${label}</button>`
             ).join('');
 
         // 绑定事件
+        const self = this;
         container.querySelectorAll('.viz-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', function () {
                 container.querySelectorAll('.viz-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this._handleOperation(btn.dataset.op, topic);
+                this.classList.add('active');
+                self._handleOperation(this.dataset.op, topic);
             });
         });
     },
@@ -128,8 +144,22 @@ const Visualizer = {
         return defaultVal !== null ? defaultVal : Math.floor(Math.random() * 90) + 10;
     },
 
+    /** 操作后刷新输入框的值，防止重复添加同一元素 */
+    _refreshInputValue() {
+        const input = document.getElementById('viz-value-input');
+        if (input) {
+            input.value = Math.floor(Math.random() * 90) + 10;
+        }
+    },
+
     /** 处理操作按钮点击 */
     _handleOperation(op, topic) {
+        // 堆主题使用专属可视化
+        if (topic.id === 'heap') { this._animHeapVisual(op); return; }
+        // 排序主题使用专属可视化
+        if (topic.id === 'quick-sort' || topic.id === 'merge-sort' || topic.id === 'sorting-intro') {
+            this._animSort(op); return;
+        }
         switch (topic.visualType) {
             case 'array': this._animArray(op); break;
             case 'nodes': this._animNodes(op); break;
@@ -149,6 +179,12 @@ const Visualizer = {
         const h = this.canvas.height / (window.devicePixelRatio || 1);
 
         ctx.clearRect(0, 0, w, h);
+
+        // 堆主题使用专属绘制
+        if (this.currentTopic.id === 'heap') { this._drawHeapVisual(); return; }
+        // 排序主题使用专属绘制
+        if (this.currentTopic.id === 'quick-sort' || this.currentTopic.id === 'merge-sort' ||
+            this.currentTopic.id === 'sorting-intro') { this._drawSort(); return; }
 
         switch (this.currentTopic.visualType) {
             case 'array': this._drawArray(); break;
@@ -224,16 +260,37 @@ const Visualizer = {
 
     _animArray(op) {
         const data = this._getArrayData();
-        if (op === '插入') {
-            data.splice(3, 0, this._getInputValue());
-        } else if (op === '删除') {
+        if (op === 'insert') {
+            const val = this._getInputValue();
+            data.splice(3, 0, val);
+            this._refreshInputValue();
+        } else if (op === 'delete') {
             if (data.length > 0) data.splice(data.length - 1, 1);
-        } else if (op === '查找') {
-            this._highlightIndex(4);
-            return;
-        } else if (op === '访问') {
-            this._highlightIndex(2);
-            return;
+        } else if (op === 'search') {
+            const target = this._getInputValue();
+            const idx = data.indexOf(target);
+            if (idx >= 0) {
+                this._highlightIndex(idx);
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 数组中未找到值 ${target}`, w / 2, 30);
+                if (typeof App !== 'undefined') App._onVisualizationAction(op);
+                return;
+            }
+        } else if (op === 'access') {
+            const idx = this._getInputValue();
+            if (idx >= 0 && idx < data.length) {
+                this._highlightIndex(idx);
+            } else {
+                this._redraw();
+                const ctx = this.ctx; const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 索引 ${idx} 越界（数组长度 ${data.length}）`, w / 2, 30);
+                if (typeof App !== 'undefined') App._onVisualizationAction(op);
+                return;
+            }
         }
         this._arrayData = data;
         this._redraw();
@@ -418,17 +475,19 @@ const Visualizer = {
 
     _animNodes(op) {
         const data = this._getNodesData();
-        if (op === '头插') {
+        if (op === 'insert_head') {
             this._insertNodeAt(0, this._getInputValue('X'));
-        } else if (op === '尾插') {
+            this._refreshInputValue();
+        } else if (op === 'insert_tail') {
             this._insertNodeAt(data.length, this._getInputValue('X'));
-        } else if (op === '删除') {
+            this._refreshInputValue();
+        } else if (op === 'delete') {
             if (data.length > 0) {
                 data.splice(data.length - 1, 1);
                 this._nodesData = data;
                 this._redraw();
             }
-        } else if (op === '反转') {
+        } else if (op === 'reverse') {
             data.reverse();
             this._nodesData = data;
             this._redraw();
@@ -500,11 +559,12 @@ const Visualizer = {
 
     _animStack(op) {
         const data = this._getStackData();
-        if (op === 'Push') {
+        if (op === 'push') {
             data.push(String(this._getInputValue()));
             this._stackData = data;
+            this._refreshInputValue();
             this._redraw();
-        } else if (op === 'Pop') {
+        } else if (op === 'pop') {
             if (data.length > 0) {
                 data.pop();
                 this._stackData = data;
@@ -575,11 +635,12 @@ const Visualizer = {
 
     _animQueue(op) {
         const data = this._getQueueData();
-        if (op === '入队') {
+        if (op === 'enqueue') {
             data.push(String(this._getInputValue()));
             this._queueData = data;
+            this._refreshInputValue();
             this._redraw();
-        } else if (op === '出队') {
+        } else if (op === 'dequeue') {
             if (data.length > 0) {
                 data.shift();
                 this._queueData = data;
@@ -677,19 +738,51 @@ const Visualizer = {
 
     _animTree(op) {
         const tree = this._getTreeData();
-        if (op === '插入') {
+        if (op === 'insert') {
             const newVal = this._getInputValue();
-            this._insertBST(tree, newVal);
+            const exists = this._searchBST(tree, newVal, []).includes('found');
+            if (exists) {
+                this._redraw();
+                const ctx = this.ctx;
+                const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 节点 ${newVal} 已存在于树中，跳过插入`, w / 2, 20);
+            } else {
+                this._insertBST(tree, newVal);
+                this._refreshInputValue();
+            }
             this._treeData = tree;
+            this._redraw();
+            if (!exists) {
+                const ctx = this.ctx;
+                const w = this.canvas.width / (window.devicePixelRatio || 1);
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`✅ 已插入节点: ${newVal}`, w / 2, 20);
+            }
+        } else if (op === 'search') {
+            const target = this._getInputValue();
+            const path = this._searchBST(tree, target, []);
             this._redraw();
             const ctx = this.ctx;
             const w = this.canvas.width / (window.devicePixelRatio || 1);
-            ctx.fillStyle = '#10b981';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`✅ 已插入节点: ${newVal}`, w / 2, 20);
-        } else if (op === '前序' || op === '中序' || op === '后序') {
-            const order = { '前序': 'pre', '中序': 'in', '后序': 'post' }[op];
+            if (path.length > 0 && path[path.length - 1] === 'found') {
+                path.pop();
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`🔍 找到 ${target}！路径: ${path.join(' → ')}`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 树中不存在 ${target}（查找路径: ${path.join(' → ')}）`, w / 2, 20);
+            }
+        } else if (op === 'preorder' || op === 'inorder' || op === 'postorder') {
+            const order = { 'preorder': 'pre', 'inorder': 'in', 'postorder': 'post' }[op];
             const result = [];
             this._traverseBST(tree, order, result);
             const ctx = this.ctx;
@@ -698,10 +791,10 @@ const Visualizer = {
             ctx.fillStyle = '#4f46e5';
             ctx.font = 'bold 14px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(`${op}遍历: [${result.join(', ')}]`, w / 2, 20);
+            ctx.fillText(`${this._opLabels[op] || op}遍历: [${result.join(', ')}]`, w / 2, 20);
         }
         // 层序
-        if (op === '层序') {
+        if (op === 'levelorder') {
             const result = this._levelOrder(tree);
             const ctx = this.ctx;
             const w = this.canvas.width / (window.devicePixelRatio || 1);
@@ -711,9 +804,41 @@ const Visualizer = {
             ctx.textAlign = 'center';
             ctx.fillText(`层序遍历: [${result.join(', ')}]`, w / 2, 20);
         }
+        // BST 最小/最大值
+        if (op === 'min' || op === 'max') {
+            const result = op === 'min' ? this._findMin(tree) : this._findMax(tree);
+            const ctx = this.ctx;
+            const w = this.canvas.width / (window.devicePixelRatio || 1);
+            this._redraw();
+            ctx.fillStyle = '#4f46e5';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${op === 'min' ? '最小值' : '最大值'}: ${result}`, w / 2, 20);
+        }
+        // BST 删除（简化展示）
+        if (op === 'delete') {
+            const ctx = this.ctx;
+            const w = this.canvas.width / (window.devicePixelRatio || 1);
+            this._redraw();
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚠️ BST 节点删除较为复杂，请参考 AI 讲解或手动操作', w / 2, 20);
+        }
+    },
+
+    _findMin(node) {
+        while (node && node.left) node = node.left;
+        return node ? node.val : null;
+    },
+
+    _findMax(node) {
+        while (node && node.right) node = node.right;
+        return node ? node.val : null;
     },
 
     _insertBST(node, val) {
+        if (val === node.val) return; // 重复值，跳过插入
         if (val < node.val) {
             if (node.left) this._insertBST(node.left, val);
             else node.left = { val, left: null, right: null };
@@ -721,6 +846,14 @@ const Visualizer = {
             if (node.right) this._insertBST(node.right, val);
             else node.right = { val, left: null, right: null };
         }
+    },
+
+    _searchBST(node, target, path) {
+        if (!node) return path;
+        path.push(node.val);
+        if (node.val === target) { path.push('found'); return path; }
+        if (target < node.val) return this._searchBST(node.left, target, path);
+        return this._searchBST(node.right, target, path);
     },
 
     _traverseBST(node, order, result) {
@@ -816,7 +949,7 @@ const Visualizer = {
         const ctx = this.ctx;
         const w = this.canvas.width / (window.devicePixelRatio || 1);
 
-        if (op === '加顶点') {
+        if (op === 'add_vertex') {
             const label = String(this._getInputValue());
             if (!gd.vertices.includes(label)) {
                 gd.vertices.push(label);
@@ -834,7 +967,7 @@ const Visualizer = {
                 ctx.textAlign = 'center';
                 ctx.fillText(`✅ 已添加顶点: ${label}`, w / 2, 20);
             }
-        } else if (op === '加边') {
+        } else if (op === 'add_edge') {
             const val = this._getInputValue();
             // 用值选择两个已有顶点
             if (gd.vertices.length >= 2) {
@@ -858,13 +991,13 @@ const Visualizer = {
                     ctx.fillText(`⚠️ 边 ${v1} ↔ ${v2} 已存在`, w / 2, 20);
                 }
             }
-        } else if (op === 'BFS') {
+        } else if (op === 'bfs') {
             this._redraw();
             ctx.fillStyle = '#4f46e5';
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('BFS 遍历: ' + gd.vertices.join(' → '), w / 2, 20);
-        } else if (op === 'DFS') {
+        } else if (op === 'dfs') {
             this._redraw();
             ctx.fillStyle = '#4f46e5';
             ctx.font = 'bold 14px sans-serif';
@@ -957,7 +1090,7 @@ const Visualizer = {
         const ctx = this.ctx;
         const w = this.canvas.width / (window.devicePixelRatio || 1);
 
-        if (op === 'Put') {
+        if (op === 'put') {
             const val = this._getInputValue();
             const key = 'k' + val;
             const idx = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % n;
@@ -975,7 +1108,7 @@ const Visualizer = {
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(`✅ Put: hash("${key}") → 桶[${idx}] = ${val}`, w / 2, 20);
-        } else if (op === 'Get') {
+        } else if (op === 'get') {
             const val = this._getInputValue();
             const key = 'k' + val;
             const idx = Math.abs(parseInt(val) || val.toString().charCodeAt(0)) % n;
@@ -993,7 +1126,7 @@ const Visualizer = {
                 ctx.textAlign = 'center';
                 ctx.fillText(`⚠️ "${key}" 不在表中（桶[${idx}] 无此键）`, w / 2, 20);
             }
-        } else if (op === 'Delete') {
+        } else if (op === 'delete') {
             if (hd.buckets.some(b => b.length > 0)) {
                 // 删除所有桶中最后一个有元素的桶的第一个元素
                 for (let i = hd.buckets.length - 1; i >= 0; i--) {
@@ -1017,6 +1150,486 @@ const Visualizer = {
         }
     },
 
+    // ==================== 堆可视化（基于数组的完全二叉树） ====================
+    _heapArrayData: null,
+    _getHeapData() {
+        if (!this._heapArrayData) {
+            // 默认大顶堆：父节点 >= 子节点
+            this._heapArrayData = [50, 35, 40, 20, 15, 30, 25, 5, 10];
+        }
+        return this._heapArrayData;
+    },
+
+    /** 绘制堆 —— 完全二叉树 + 数组索引 */
+    _drawHeapVisual() {
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+        const h = this.canvas.height / (window.devicePixelRatio || 1);
+        const arr = this._getHeapData();
+        const n = arr.length;
+        const nodeR = 26;
+        const levelHeight = 80;
+        const cx = w / 2;
+
+        // 计算每层节点数及起始Y
+        const drawNodeAndChildren = (index, x, y, offsetX) => {
+            if (index >= n) return;
+            const val = arr[index];
+            const leftIdx = 2 * index + 1;
+            const rightIdx = 2 * index + 2;
+
+            // 画左子连线
+            if (leftIdx < n) {
+                const childX = x - offsetX;
+                const childY = y + levelHeight;
+                ctx.strokeStyle = this.colors.edge;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, y + nodeR);
+                ctx.lineTo(childX, childY - nodeR);
+                ctx.stroke();
+                drawNodeAndChildren(leftIdx, childX, childY, offsetX / 2);
+            }
+
+            // 画右子连线
+            if (rightIdx < n) {
+                const childX = x + offsetX;
+                const childY = y + levelHeight;
+                ctx.strokeStyle = this.colors.edge;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, y + nodeR);
+                ctx.lineTo(childX, childY - nodeR);
+                ctx.stroke();
+                drawNodeAndChildren(rightIdx, childX, childY, offsetX / 2);
+            }
+
+            // 画节点（根节点高亮）
+            const isRoot = index === 0;
+            ctx.fillStyle = isRoot ? this.colors.nodeActive : this.colors.nodeFill;
+            ctx.strokeStyle = this.colors.nodeStroke;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(x, y, nodeR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // 显示值
+            ctx.fillStyle = this.colors.nodeText;
+            ctx.font = 'bold 13px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(val, x, y);
+
+            // 显示数组索引
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px monospace';
+            ctx.fillText(`[${index}]`, x, y + nodeR + 14);
+        };
+
+        drawNodeAndChildren(0, cx, 60, w / 4);
+
+        // 底部数组展示
+        const arrY = h - 55;
+        const cellW = Math.min(48, (w - 80) / n);
+        const startX = (w - cellW * n) / 2;
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('底层数组:', 60, arrY - 8);
+
+        for (let i = 0; i < n; i++) {
+            const x = startX + i * cellW;
+            ctx.fillStyle = i === 0 ? '#d1fae5' : '#f8fafc';
+            ctx.strokeStyle = this.colors.nodeStroke;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x, arrY, cellW, 28);
+            ctx.fillRect(x + 1, arrY + 1, cellW - 2, 27);
+            ctx.fillStyle = this.colors.nodeText;
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(arr[i], x + cellW / 2, arrY + 14);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px sans-serif';
+            ctx.fillText(`[${i}]`, x + cellW / 2, arrY + 32);
+        }
+
+        // 图例
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('大顶堆 · 完全二叉树（左子=2i+1, 右子=2i+2）', w / 2, h - 10);
+    },
+
+    /** 堆操作动画 */
+    _animHeapVisual(op) {
+        const arr = this._getHeapData();
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+
+        if (op === 'insert') {
+            const val = this._getInputValue();
+            // 检查重复
+            if (arr.includes(val)) {
+                this._redraw();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`⚠️ 值 ${val} 已存在于堆中`, w / 2, 20);
+                this._refreshInputValue();
+                return;
+            }
+            arr.push(val);
+            this._siftUp(arr, arr.length - 1);
+            this._heapArrayData = arr;
+            this._refreshInputValue();
+            this._redraw();
+            ctx.fillStyle = '#10b981';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`✅ 堆插入: ${val}（已上浮至正确位置）`, w / 2, 20);
+        } else if (op === 'extract_top' || op === 'delete') {
+            if (arr.length === 0) {
+                this._redraw();
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('⚠️ 堆为空，无法取出堆顶', w / 2, 20);
+                return;
+            }
+            const top = arr[0];
+            arr[0] = arr[arr.length - 1];
+            arr.pop();
+            if (arr.length > 0) this._siftDown(arr, 0);
+            this._heapArrayData = arr;
+            this._redraw();
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🗑️ 取出堆顶: ${top}（已下沉调整）`, w / 2, 20);
+        } else if (op === 'heapify') {
+            // 从最后一个非叶子节点开始下沉
+            for (let i = Math.floor(arr.length / 2) - 1; i >= 0; i--) {
+                this._siftDown(arr, i);
+            }
+            this._heapArrayData = arr;
+            this._redraw();
+            ctx.fillStyle = '#4f46e5';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('✅ 建堆完成：已调整为合法的大顶堆', w / 2, 20);
+        } else if (op === 'peek') {
+            this._redraw();
+            if (arr.length > 0) {
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`👀 堆顶元素: ${arr[0]}`, w / 2, 20);
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('⚠️ 堆为空', w / 2, 20);
+            }
+        }
+    },
+
+    /** 上浮：将 index 位置的元素向上调整到大顶堆合法位置 */
+    _siftUp(arr, idx) {
+        while (idx > 0) {
+            const parent = Math.floor((idx - 1) / 2);
+            if (arr[idx] <= arr[parent]) break;
+            [arr[idx], arr[parent]] = [arr[parent], arr[idx]];
+            idx = parent;
+        }
+    },
+
+    /** 下沉：将 index 位置的元素向下调整到大顶堆合法位置 */
+    _siftDown(arr, idx) {
+        const n = arr.length;
+        while (true) {
+            let largest = idx;
+            const left = 2 * idx + 1;
+            const right = 2 * idx + 2;
+            if (left < n && arr[left] > arr[largest]) largest = left;
+            if (right < n && arr[right] > arr[largest]) largest = right;
+            if (largest === idx) break;
+            [arr[idx], arr[largest]] = [arr[largest], arr[idx]];
+            idx = largest;
+        }
+    },
+
+    // ==================== 排序可视化 ====================
+    _sortData: null,
+    _getSortData() {
+        if (!this._sortData) {
+            this._sortData = [64, 34, 25, 12, 22, 11, 90, 45, 55, 78];
+        }
+        return this._sortData;
+    },
+
+    /** 绘制排序数组 */
+    _drawSort() {
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+        const h = this.canvas.height / (window.devicePixelRatio || 1);
+        const data = this._getSortData();
+        const n = data.length;
+        const barW = Math.min(55, (w - 120) / n);
+        const maxVal = Math.max(...data);
+        const chartH = h - 140;
+        const startX = (w - barW * n) / 2;
+        const baseY = h - 80;
+
+        // 画网格
+        ctx.strokeStyle = this.colors.grid;
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 5; i++) {
+            const y = baseY - (chartH / 5) * i;
+            ctx.beginPath();
+            ctx.moveTo(40, y);
+            ctx.lineTo(w - 40, y);
+            ctx.stroke();
+        }
+
+        // 画柱子
+        data.forEach((val, i) => {
+            const x = startX + i * barW;
+            const barH = (val / maxVal) * chartH * 0.9;
+            const y = baseY - barH;
+
+            // 柱子渐变色
+            const gradient = ctx.createLinearGradient(x, y, x, baseY);
+            gradient.addColorStop(0, '#818cf8');
+            gradient.addColorStop(1, '#c7d2fe');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x + 3, y, barW - 6, barH);
+
+            // 数值
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(val, x + barW / 2, y - 8);
+
+            // 索引
+            ctx.fillStyle = '#64748b';
+            ctx.font = '11px sans-serif';
+            ctx.fillText(`[${i}]`, x + barW / 2, baseY + 16);
+        });
+
+        // 标题
+        const topicName = this.currentTopic ? this.currentTopic.name : '';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${topicName} · 点击下方按钮观察排序过程`, w / 2, 25);
+    },
+
+    /** 排序操作动画 */
+    _animSort(op) {
+        const data = this._getSortData();
+        const ctx = this.ctx;
+        const w = this.canvas.width / (window.devicePixelRatio || 1);
+        const h = this.canvas.height / (window.devicePixelRatio || 1);
+
+        if (op === 'compare') {
+            // 高亮比较相邻元素
+            this._redraw();
+            const n = data.length;
+            const barW = Math.min(55, (w - 120) / n);
+            const maxVal = Math.max(...data);
+            const chartH = h - 140;
+            const startX = (w - barW * n) / 2;
+            const baseY = h - 80;
+
+            let i = 0;
+            const compareStep = () => {
+                if (i >= n - 1) {
+                    this._redraw();
+                    ctx.fillStyle = '#10b981';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('✅ 比较完成：一趟相邻元素比较结束', w / 2, 20);
+                    return;
+                }
+                this._redraw();
+                // 高亮比较的两个柱子
+                const x1 = startX + i * barW;
+                const x2 = startX + (i + 1) * barW;
+                const barH1 = (data[i] / maxVal) * chartH * 0.9;
+                const barH2 = (data[i + 1] / maxVal) * chartH * 0.9;
+
+                ctx.fillStyle = this.colors.barCompare;
+                ctx.fillRect(x1 + 1, baseY - barH1, barW - 2, barH1);
+                ctx.fillRect(x2 + 1, baseY - barH2, barW - 2, barH2);
+
+                const cmp = data[i] > data[i + 1] ? '>' : '≤';
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`比较: [${i}]=${data[i]} ${cmp} [${i + 1}]=${data[i + 1]}`, w / 2, 25);
+
+                i++;
+                setTimeout(compareStep, 600);
+            };
+            compareStep();
+        } else if (op === 'partition') {
+            // 快速排序分区：以最后一个元素为pivot，展示一趟分区
+            this._redraw();
+            const n = data.length;
+            const barW = Math.min(55, (w - 120) / n);
+            const maxVal = Math.max(...data);
+            const chartH = h - 140;
+            const startX = (w - barW * n) / 2;
+            const baseY = h - 80;
+            const pivot = data[n - 1];
+
+            // 高亮 pivot
+            const px = startX + (n - 1) * barW;
+            const pbarH = (pivot / maxVal) * chartH * 0.9;
+            ctx.fillStyle = this.colors.barSwap;
+            ctx.fillRect(px + 1, baseY - pbarH, barW - 2, pbarH);
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`← pivot=${pivot}`, px + barW / 2, baseY - pbarH - 16);
+
+            // 模拟分区过程
+            let j = 0;
+            const arr = [...data];
+            const partitionStep = () => {
+                if (j >= n - 1) {
+                    this._redraw();
+                    ctx.fillStyle = '#10b981';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('✅ 一趟分区完成：pivot 左侧 ≤ pivot < 右侧', w / 2, 20);
+                    if (typeof App !== 'undefined') App._onVisualizationAction('partition');
+                    return;
+                }
+                this._redraw();
+                // 再次高亮pivot
+                const pbarH2 = (pivot / maxVal) * chartH * 0.9;
+                ctx.fillStyle = this.colors.barSwap;
+                ctx.fillRect(px + 1, baseY - pbarH2, barW - 2, pbarH2);
+
+                // 高亮当前扫描元素
+                const jx = startX + j * barW;
+                const jbarH = (arr[j] / maxVal) * chartH * 0.9;
+                ctx.fillStyle = arr[j] <= pivot ? this.colors.nodeActive : this.colors.barCompare;
+                ctx.fillRect(jx + 1, baseY - jbarH, barW - 2, jbarH);
+
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                const label = arr[j] <= pivot ? `${arr[j]} ≤ ${pivot}` : `${arr[j]} > ${pivot}`;
+                ctx.fillText(`扫描 [${j}]: ${label}`, w / 2, 25);
+
+                j++;
+                setTimeout(partitionStep, 500);
+            };
+            partitionStep();
+        } else if (op === 'merge') {
+            // 归并排序合并：展示两个有序段合并
+            const arr = [...data];
+            const mid = Math.floor(arr.length / 2);
+            // 先对两半分别排序以模拟
+            const left = arr.slice(0, mid).sort((a, b) => a - b);
+            const right = arr.slice(mid).sort((a, b) => a - b);
+
+            this._redraw();
+            ctx.fillStyle = '#4f46e5';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`合并: 左段[${left.join(',')}] + 右段[${right.join(',')}]`, w / 2, 20);
+
+            let li = 0, ri = 0;
+            const merged = [];
+            const mergeStep = () => {
+                if (li >= left.length && ri >= right.length) {
+                    // 更新排序数据
+                    for (let k = 0; k < merged.length; k++) {
+                        this._sortData[k] = merged[k];
+                    }
+                    this._redraw();
+                    ctx.fillStyle = '#10b981';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`✅ 合并完成: [${merged.join(', ')}]`, w / 2, 20);
+                    if (typeof App !== 'undefined') App._onVisualizationAction('merge');
+                    return;
+                }
+                if (ri >= right.length || (li < left.length && left[li] <= right[ri])) {
+                    merged.push(left[li++]);
+                } else {
+                    merged.push(right[ri++]);
+                }
+                this._redraw();
+                ctx.fillStyle = '#4f46e5';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`合并中: [${merged.join(', ')}]`, w / 2, 20);
+                setTimeout(mergeStep, 400);
+            };
+            mergeStep();
+        } else if (op === 'sort') {
+            // 执行一趟冒泡排序展示
+            const arr = [...data];
+            const n = arr.length;
+            let pass = 0;
+            const bubbleStep = () => {
+                if (pass >= n - 1) {
+                    this._sortData = arr;
+                    this._redraw();
+                    ctx.fillStyle = '#10b981';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`✅ 排序完成: [${arr.join(', ')}]`, w / 2, 20);
+                    if (typeof App !== 'undefined') App._onVisualizationAction('sort');
+                    return;
+                }
+                // 一趟冒泡
+                let j = 0;
+                const innerStep = () => {
+                    if (j >= n - 1 - pass) {
+                        pass++;
+                        this._sortData = [...arr];
+                        this._redraw();
+                        ctx.fillStyle = '#1e293b';
+                        ctx.font = 'bold 14px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`第 ${pass} 趟完成: [${arr.join(', ')}]`, w / 2, 20);
+                        setTimeout(bubbleStep, 500);
+                        return;
+                    }
+                    if (arr[j] > arr[j + 1]) {
+                        [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+                    }
+                    j++;
+                    this._sortData = [...arr];
+                    this._redraw();
+                    // 高亮比较位置
+                    const barW = Math.min(55, (w - 120) / n);
+                    const maxVal = Math.max(...arr);
+                    const chartH = h - 140;
+                    const startX = (w - barW * n) / 2;
+                    const baseY = h - 80;
+                    const x1 = startX + (j - 1) * barW;
+                    const x2 = startX + j * barW;
+                    const barH1 = (arr[j - 1] / maxVal) * chartH * 0.9;
+                    const barH2 = (arr[j] / maxVal) * chartH * 0.9;
+                    ctx.fillStyle = this.colors.barCompare;
+                    ctx.fillRect(x1 + 1, baseY - barH1, barW - 2, barH1);
+                    ctx.fillRect(x2 + 1, baseY - barH2, barW - 2, barH2);
+                    setTimeout(innerStep, 250);
+                };
+                innerStep();
+            };
+            bubbleStep();
+        }
+    },
+
     // ==================== 通用方法 ====================
     /** 重置当前主题的可视化数据 */
     resetData() {
@@ -1027,6 +1640,8 @@ const Visualizer = {
         this._treeData = null;
         this._graphData = null;
         this._hashData = null;
+        this._heapArrayData = null;
+        this._sortData = null;
         if (this.currentTopic) {
             this._redraw();
         }

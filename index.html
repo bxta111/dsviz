@@ -117,8 +117,9 @@
                 <textarea id="chat-input" placeholder="输入你的回答或问题..." rows="2" disabled></textarea>
                 <div class="chat-buttons">
                     <button id="btn-send" class="btn-primary" disabled>发送</button>
-                    <button id="btn-hint" class="btn-secondary" disabled>💡 提示</button>
-                    <button id="btn-skip" class="btn-outline" disabled>跳过</button>
+                    <button id="btn-question" class="btn-primary" disabled>📝 出题</button>
+                    <button id="btn-hint" class="btn-secondary" onclick="if(typeof App!=='undefined')App._requestHint()">💡 提示</button>
+                    <button id="btn-skip" class="btn-outline" onclick="if(typeof App!=='undefined')App._skipQuestion()">跳过</button>
                 </div>
             </div>
         </aside>

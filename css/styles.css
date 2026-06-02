@@ -598,6 +598,10 @@ ul { list-style: none; }
 .btn-primary:hover { background: #4338ca; }
 .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
 
+#btn-question { background: #10b981; }
+#btn-question:hover { background: #059669; }
+#btn-question:disabled { background: #6ee7b7; cursor: not-allowed; }
+
 .btn-secondary {
     padding: 7px 14px;
     background: var(--surface);

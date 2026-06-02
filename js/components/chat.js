@@ -15,6 +15,7 @@ const Chat = {
         this.container = document.getElementById('chat-messages');
         this.input = document.getElementById('chat-input');
         this.sendBtn = document.getElementById('btn-send');
+        this.questionBtn = document.getElementById('btn-question');
         this.hintBtn = document.getElementById('btn-hint');
         this.skipBtn = document.getElementById('btn-skip');
         this.roleBadge = document.getElementById('ai-role-badge');
@@ -22,6 +23,11 @@ const Chat = {
         // 绑定事件（加 null 检查）
         if (this.sendBtn) {
             this.sendBtn.addEventListener('click', () => this._handleSend());
+        }
+        if (this.questionBtn) {
+            this.questionBtn.addEventListener('click', () => {
+                if (typeof App !== 'undefined') App._onGenerateQuestion();
+            });
         }
         if (this.input) {
             this.input.addEventListener('keydown', (e) => {
@@ -31,12 +37,7 @@ const Chat = {
                 }
             });
         }
-        if (this.skipBtn) {
-            this.skipBtn.addEventListener('click', () => App._skipQuestion());
-        }
-        if (this.hintBtn) {
-            this.hintBtn.addEventListener('click', () => App._requestHint());
-        }
+        // 提示/跳过按钮已通过 HTML onclick 绑定，此处不再重复
 
         this.setEnabled(false);
     },
@@ -45,9 +46,15 @@ const Chat = {
     setEnabled(enabled) {
         if (this.input) this.input.disabled = !enabled;
         if (this.sendBtn) this.sendBtn.disabled = !enabled;
+        if (this.questionBtn) this.questionBtn.disabled = !enabled;
         if (this.hintBtn) this.hintBtn.disabled = !enabled;
         if (this.skipBtn) this.skipBtn.disabled = !enabled;
         if (enabled && this.input) this.input.focus();
+    },
+
+    /** 单独控制出题按钮（讲解期间可出题，但输入框不能发送） */
+    setQuestionEnabled(enabled) {
+        if (this.questionBtn) this.questionBtn.disabled = !enabled;
     },
 
     /** 设置 AI 角色显示 */
